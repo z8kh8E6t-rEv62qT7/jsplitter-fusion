@@ -1,0 +1,19 @@
+# Windows and macOS metadata
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor-local settings
+.idea/
+.vscode/
+*.suo
+*.user
+*.swp
+*~
+
+# Temporary and diagnostic output
+*.log
+*.tmp
+*.stackdump
+coverage/
+node_modules/
