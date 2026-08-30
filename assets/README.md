@@ -12,6 +12,14 @@ right, are:
 6. `shuffle` (`U+E043`)
 7. `folder` (`U+E2C7`)
 8. `repeat_one` (`U+E041`)
+9. `volume_up` (`U+E050`)
+10. `volume_off` (`U+E04F`)
 
 Each cell is 96 x 96 pixels. The runtime loads this single image and selects a
 cell by source rectangle; it does not require the font to be installed.
+
+Regenerate the complete sprite from the repository root with Pillow installed:
+
+```bash
+python tools/generate-transport-icons.py --font /path/to/MaterialIconsRound-Regular.otf
+```

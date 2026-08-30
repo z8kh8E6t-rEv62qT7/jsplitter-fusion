@@ -103,9 +103,8 @@ function on_playback_time() {
 }
 function on_volume_change() {
     guarded(function () {
-        var rect = fusionApp.bottom.rect;
-        var summaryY = rect.y + FusionUI.Theme.metrics.transportRow + FusionUI.Theme.metrics.seekRow;
-        window.RepaintRect(rect.x, summaryY, rect.w, Math.max(0, rect.y + rect.h - summaryY));
+        var rect = fusionApp.bottom.transport.volumeControlRect;
+        if (rect) window.RepaintRect(rect.x, rect.y, rect.w, rect.h);
     });
 }
 function on_playback_order_changed() {

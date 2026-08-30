@@ -68,11 +68,14 @@ JSplitter 必须作为 Columns UI 面板运行。`main.js` 还会加载 JSplitte
 
 ### 底部控制区
 
-- 提供停止、播放/暂停、上一首、下一首、Shuffle Tracks、Repeat Track 和添加文件按钮。
+- 按钮行左侧提供停止、播放/暂停、上一首、下一首、Shuffle Tracks、Repeat Track 和添加文件按钮。
+- 按钮行右侧依次显示静音按钮、dB 数值和音量条；静音按钮调用 foobar2000 原生 Mute。
+- 音量大于 `-100 dB` 时显示 `volume_up`，等于 `-100 dB` 时显示 `volume_off`。手动将音量调到最低也使用后者。
+- 最低音量在用户界面显示为 `−∞ dB`；内部仍使用 JSplitter 的 `-100 dB` 下限。
 - Shuffle Tracks 与 Repeat Track 是播放顺序切换，并通过同一个播放顺序自然互斥。
-- 右侧播放顺序菜单包含 Default、Repeat Playlist、Repeat Track、Random、Shuffle Tracks、Shuffle Albums 和 Shuffle Folders。
+- 其他播放顺序通过 foobar2000 原生 Playback 菜单选择；自绘控制区不提供播放顺序下拉框。
 - 进度条支持点击定位、拖动预览和释放跳转；未知长度流媒体禁用跳转。
-- 音量条支持点击、拖动和滚轮调节。
+- 音量条支持点击、拖动和滚轮调节，轨道宽度按 DPI 缩放限制在 96–180px。
 - 右键 dB 数值或音量条可切换真实振幅、dB 线性和旧版三种位置映射。
 - 进度条上方的 Now Playing 文本始终跟随正在播放项目，不受列表选择影响；停止后留空。
 
@@ -143,13 +146,15 @@ views/
   playlist-view.js              中央歌曲列表、列和选择交互
   right-pane.js                 封面与 Item details
   scrollbar.js                  横纵通用滚动条
-  transport-controls.js         播放按钮、播放顺序与标题模板菜单
-  bottom-bar.js                 进度、摘要和音量控制
+  transport-controls.js         播放、静音、音量、播放顺序按钮与标题模板菜单
+  bottom-bar.js                 进度与信息摘要
 assets/
   transport-icons.png           播放控制图标精灵图
   README.md                     图标来源与精灵单元说明
 tests/
   jsplitter-fusion-tests.js      Node.js 回归测试入口
+tools/
+  generate-transport-icons.py   Material Icons 精灵图生成工具
 ```
 
 `main.js` 使用相对路径按依赖顺序加载各模块。新增模块时需要同时更新入口加载顺序；模块通过 `FusionUI` 命名空间共享内部接口。
@@ -169,6 +174,14 @@ find . -type f -name '*.js' -print0 | xargs -0 -n1 node --check
 ```bash
 node tests/jsplitter-fusion-tests.js
 ```
+
+图标生成工具需要开发环境安装 Pillow，并要求显式传入 Material Icons Round 字体路径：
+
+```bash
+python tools/generate-transport-icons.py --font /path/to/MaterialIconsRound-Regular.otf
+```
+
+生成结果固定写入 `assets/transport-icons.png`；foobar2000 运行时不需要 Python、Pillow 或字体文件。
 
 提交前还应确认：
 

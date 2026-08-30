@@ -464,7 +464,14 @@ function handleList(handles, duration, size) {
 
 {
     let resetCount = 0;
+    let muteCount = 0;
+    let volumeUpCount = 0;
+    let volumeDownCount = 0;
     const mainMenuCommands = [];
+    const menuItems = [];
+    const checkedItems = [];
+    const repaints = [];
+    let popupResult = 2;
     const context = {
         FusionUI: {
             Theme: { s: value => value },
@@ -475,7 +482,9 @@ function handleList(handles, duration, size) {
             },
             Settings: {
                 nowPlayingFormat: '%title%',
-                resetNowPlayingFormat: () => { resetCount += 1; }
+                volumeMapping: 'amplitude',
+                resetNowPlayingFormat: () => { resetCount += 1; },
+                setVolumeMapping(value) { this.volumeMapping = value; return value; }
             }
         },
         fusionAssetPath: name => name,
@@ -483,20 +492,51 @@ function handleList(handles, duration, size) {
         fb: {
             IsPlaying: false,
             IsPaused: false,
-            RunMainMenuCommand: command => { mainMenuCommands.push(command); }
+            Volume: -20,
+            RunMainMenuCommand: command => { mainMenuCommands.push(command); },
+            VolumeMute: () => { muteCount += 1; },
+            VolumeUp: () => { volumeUpCount += 1; },
+            VolumeDown: () => { volumeDownCount += 1; }
         },
         plman: { PlaybackOrder: 0 },
         window: {
             CreatePopupMenu: () => ({
-                AppendMenuItem: () => {},
-                TrackPopupMenu: () => 2
+                AppendMenuItem: (_flags, id, label) => menuItems.push({ id, label }),
+                CheckMenuRadioItem: (first, last, selected) => checkedItems.push({ first, last, selected }),
+                TrackPopupMenu: () => popupResult
             }),
-            RepaintRect: () => {}
+            RepaintRect: (...args) => repaints.push(args)
         },
         MF_STRING: 0
     };
+    run('core/volume-mapping.js', context);
     run('views/transport-controls.js', context);
-    const controls = new context.FusionUI.TransportControls({ count: () => 0 });
+    const controls = new context.FusionUI.TransportControls({
+        count: () => 0,
+        nowPlayingSummary: () => 'Track'
+    });
+    controls.layout({ x: 0, y: 0, w: 800, h: 40 });
+    assert.strictEqual(controls.volumeRect.w, 120);
+    assert.strictEqual(controls.volumeRect.x + controls.volumeRect.w, 769);
+    assert.strictEqual(795 - (controls.volumeRect.x + controls.volumeRect.w), 26);
+    assert.strictEqual(controls.volumeLabelRect.x + controls.volumeLabelRect.w + 4,
+        controls.volumeRect.x);
+    assert(controls.volumeMenuRect.x >= controls.muteRect.x + controls.muteRect.w + 4);
+    assert(controls.statusRect.x + controls.statusRect.w <= controls.muteRect.x);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(controls, 'orderRect'), false);
+
+    controls.layout({ x: 0, y: 0, w: 320, h: 40 });
+    assert.strictEqual(controls.volumeRect.w, 96);
+    assert(controls.buttonRects[controls.buttonRects.length - 1].x +
+        controls.buttonRects[controls.buttonRects.length - 1].w <= controls.muteRect.x);
+    assert(controls.volumeRect.x + controls.volumeRect.w <= 320);
+
+    controls.layout({ x: 0, y: 0, w: 5, h: 40 });
+    assert(controls.buttonRects[controls.buttonRects.length - 1].x +
+        controls.buttonRects[controls.buttonRects.length - 1].w <= controls.muteRect.x);
+    assert(controls.volumeRect.x + controls.volumeRect.w <= 5);
+
+    controls.layout({ x: 0, y: 0, w: 800, h: 40 });
     controls.invoke('shuffle');
     assert.strictEqual(context.plman.PlaybackOrder, 4);
     assert.strictEqual(controls.iconAlpha('shuffle', true), 255);
@@ -509,10 +549,42 @@ function handleList(handles, duration, size) {
     assert.strictEqual(context.plman.PlaybackOrder, 0);
     controls.invoke('addFiles');
     assert.deepStrictEqual(mainMenuCommands, ['File/Add files...']);
-    controls.statusRect = { x: 20, y: 0, w: 100, h: 30 };
-    assert.strictEqual(controls.context(30, 10), true);
+    assert.strictEqual(controls.iconId('mute'), 'volumeUp');
+    assert.strictEqual(controls.volumeText(), '-20.00 dB');
+    context.fb.Volume = -100;
+    assert.strictEqual(controls.iconId('mute'), 'volumeOff');
+    assert.strictEqual(controls.volumeText(), '−∞ dB');
+    context.fb.Volume = -20;
+    controls.invoke('mute');
+    assert.strictEqual(muteCount, 1);
+
+    assert.strictEqual(controls.context(controls.statusRect.x + 1, 10), true);
     assert.strictEqual(resetCount, 1);
-    assert.strictEqual(controls.context(10, 10), false);
+    menuItems.length = 0;
+    popupResult = 2;
+    const volumeBeforeMenu = context.fb.Volume;
+    assert.strictEqual(controls.context(controls.volumeMenuRect.x + 1, 10), true);
+    assert.strictEqual(context.FusionUI.Settings.volumeMapping, 'dbLinear');
+    assert.strictEqual(context.fb.Volume, volumeBeforeMenu);
+    assert.deepStrictEqual(menuItems.map(item => item.label), ['真实振幅', 'dB 线性', '旧版曲线']);
+    assert.deepStrictEqual(checkedItems, [{ first: 1, last: 3, selected: 1 }]);
+
+    context.FusionUI.Settings.volumeMapping = 'amplitude';
+    controls.volumeRect = { x: 600, y: 17, w: 101, h: 6 };
+    controls.volumeControlRect = { x: 500, y: 0, w: 295, h: 40 };
+    controls.volumeMenuRect = { x: 530, y: 0, w: 265, h: 40 };
+    controls.setVolumeFromX(610);
+    assertClose(context.fb.Volume, -20);
+    assert.strictEqual(controls.down(650, 20), true);
+    assert.strictEqual(controls.volumeDragging, true);
+    assert.strictEqual(controls.move(660, 20), true);
+    assert.strictEqual(controls.up(670, 20), true);
+    assert.strictEqual(controls.volumeDragging, false);
+    assert.strictEqual(controls.wheel(650, 10, 1), true);
+    assert.strictEqual(controls.wheel(650, 10, -1), true);
+    assert.strictEqual(volumeUpCount, 1);
+    assert.strictEqual(volumeDownCount, 1);
+    assert(repaints.length > 0);
 }
 
 {
@@ -558,12 +630,13 @@ function handleList(handles, duration, size) {
     const context = {
         FusionUI: {
             Theme: {
-                s: value => value,
+                s: value => value * 2,
+                metrics: { transportRow: 80, seekRow: 72 },
                 palette: { base: 0, text: 1, highlight: 2, border: 3 },
                 darkPalette: { remaining: 4 },
                 fonts: { normal: {} }
             },
-            TransportControls: function () {}
+            TransportControls: function () { this.layout = () => {}; }
         },
         fb: { IsPlaying: false, IsPaused: false, PlaybackLength: 8, PlaybackTime: 0 },
         window: { Repaint: () => {}, RepaintRect: () => {} },
@@ -572,10 +645,14 @@ function handleList(handles, duration, size) {
     run('core/utils.js', context);
     run('views/bottom-bar.js', context);
     const bar = new context.FusionUI.BottomBar({});
-    bar.seekRect = { x: 0, y: 0, w: 300, h: 36 };
-    bar.seekTrackRect = { x: 70, y: 9, w: 160, h: 18 };
-    bar.elapsedRect = { x: 0, y: 0, w: 60, h: 36 };
-    bar.remainingRect = { x: 240, y: 0, w: 60, h: 36 };
+    bar.layout({ x: 0, y: 0, w: 1000, h: 200 });
+    assert.strictEqual(bar.elapsedTextRect.x - bar.elapsedRect.x, 38);
+    assert.strictEqual((bar.remainingRect.x + bar.remainingRect.w) -
+        (bar.remainingTextRect.x + bar.remainingTextRect.w), 38);
+    bar.layout({ x: 0, y: 0, w: 200, h: 200 });
+    assert(bar.elapsedTextRect.w > 0);
+    assert(bar.remainingTextRect.w > 0);
+    bar.layout({ x: 0, y: 0, w: 1000, h: 200 });
     const graphics = {
         FillSolidRect: () => {}, FillRoundRect: () => {}, PushClip: () => {}, PopClip: () => {},
         DrawLine: () => {}, GdiDrawText: text => drawnText.push(text)
@@ -591,64 +668,39 @@ function handleList(handles, duration, size) {
 }
 
 {
-    const menuItems = [];
-    const checkedItems = [];
-    const repaints = [];
-    let volumeUpCount = 0;
-    let volumeDownCount = 0;
-    let popupResult = 2;
+    const textRects = [];
     const context = {
         FusionUI: {
-            Theme: { s: value => value },
+            Theme: {
+                s: value => value,
+                palette: { base: 0, text: 1, border: 2 },
+                fonts: { small: {} }
+            },
             Util: {
-                clamp: (value, min, max) => Math.max(min, Math.min(max, value)),
-                inRect: (x, y, rect) => !!rect && x >= rect.x && y >= rect.y &&
-                    x < rect.x + rect.w && y < rect.y + rect.h
+                formatSelectionDuration: seconds => `${seconds}s`,
+                drawText: (_gr, _text, _font, _colour, rect) => textRects.push(rect)
             },
-            Settings: {
-                volumeMapping: 'amplitude',
-                setVolumeMapping(value) { this.volumeMapping = value; return value; }
-            },
-            TransportControls: function () { this.context = () => false; }
+            TransportControls: function () {}
         },
-        fb: {
-            Volume: -20,
-            VolumeUp: () => { volumeUpCount += 1; },
-            VolumeDown: () => { volumeDownCount += 1; }
-        },
-        window: {
-            CreatePopupMenu: () => ({
-                AppendMenuItem: (_flags, id, label) => menuItems.push({ id, label }),
-                CheckMenuRadioItem: (first, last, selected) => checkedItems.push({ first, last, selected }),
-                TrackPopupMenu: () => popupResult
-            }),
-            RepaintRect: (...args) => repaints.push(args)
-        },
-        MF_STRING: 0
+        DT_LEFT: 0, DT_CENTER: 0, DT_RIGHT: 0, DT_VCENTER: 0, DT_SINGLELINE: 0,
+        DT_END_ELLIPSIS: 0, DT_NOPREFIX: 0,
+        fb: {}
     };
-    run('core/volume-mapping.js', context);
     run('views/bottom-bar.js', context);
-    const bar = new context.FusionUI.BottomBar({});
-    bar.summaryRect = { x: 0, y: 0, w: 180, h: 24 };
-    bar.volumeControlRect = { x: 0, y: 0, w: 120, h: 24 };
-    bar.volumeRect = { x: 70, y: 9, w: 101, h: 6 };
-    assertClose(bar.volumePosition(), 0.1);
-    bar.setVolumeFromX(80);
-    assertClose(context.fb.Volume, -20);
-    const volumeBeforeMenu = context.fb.Volume;
-    assert.strictEqual(bar.context(10, 10), true);
-    assert.strictEqual(context.FusionUI.Settings.volumeMapping, 'dbLinear');
-    assert.strictEqual(context.fb.Volume, volumeBeforeMenu);
-    assert.deepStrictEqual(menuItems.map(item => item.label), ['真实振幅', 'dB 线性', '旧版曲线']);
-    assert.deepStrictEqual(checkedItems, [{ first: 1, last: 3, selected: 1 }]);
-    assert.deepStrictEqual(repaints, [[0, 0, 120, 24]]);
-    popupResult = 0;
-    assert.strictEqual(bar.context(80, 10), true);
-    assert.strictEqual(context.FusionUI.Settings.volumeMapping, 'dbLinear');
-    assert.strictEqual(bar.wheel(80, 10, 1), true);
-    assert.strictEqual(bar.wheel(80, 10, -1), true);
-    assert.strictEqual(volumeUpCount, 1);
-    assert.strictEqual(volumeDownCount, 1);
+    const model = {
+        count: () => 10,
+        playlistDuration: () => 120,
+        displayContext: () => ({ count: 1 }),
+        detailsForContext: () => ({
+            length: '1:00', codec: 'FLAC', bitrate: '1000 kbps',
+            samplerate: '44100 Hz', bitdepth: '16 bit', channels: 'stereo'
+        })
+    };
+    const bar = new context.FusionUI.BottomBar(model);
+    bar.summaryRect = { x: 0, y: 0, w: 1000, h: 24 };
+    bar.drawSummary({ FillSolidRect: () => {}, DrawLine: () => {} });
+    assert.strictEqual(textRects.length, 3);
+    assert.strictEqual(textRects[2].x + textRects[2].w, 1000);
 }
 
 const playlistSource = fs.readFileSync(path.join(sourceRoot, 'views/playlist-view.js'), 'utf8');
@@ -660,5 +712,20 @@ assert(mainSource.includes('include(relativePath);'));
 assert(!mainSource.includes('include(fusionRoot + relativePath);'));
 assert(mainSource.indexOf("fusionInclude('core\\\\volume-mapping.js');") <
     mainSource.indexOf("fusionInclude('core\\\\settings.js');"));
+assert(mainSource.includes('bottom.transport.volumeControlRect'));
+
+const transportSource = fs.readFileSync(path.join(sourceRoot, 'views/transport-controls.js'), 'utf8');
+assert(!transportSource.includes('ORDER_NAMES'));
+assert(!transportSource.includes('orderRect'));
+assert(!transportSource.includes('showOrderMenu'));
+assert(transportSource.includes('fb.VolumeMute()'));
+
+const bottomSource = fs.readFileSync(path.join(sourceRoot, 'views/bottom-bar.js'), 'utf8');
+assert(!bottomSource.includes('volumeControlRect'));
+assert(!bottomSource.includes('volumeDragging'));
+
+const iconData = fs.readFileSync(path.join(sourceRoot, 'assets/transport-icons.png'));
+assert.strictEqual(iconData.readUInt32BE(16), 960);
+assert.strictEqual(iconData.readUInt32BE(20), 96);
 
 console.log('JSplitter Fusion tests passed');

@@ -1,17 +1,14 @@
 (function (ns) {
     'use strict';
 
-    var ORDER_NAMES = [
-        'Default',
-        'Repeat Playlist',
-        'Repeat Track',
-        'Random',
-        'Shuffle Tracks',
-        'Shuffle Albums',
-        'Shuffle Folders'
+    var VOLUME_MAPPING_MENU = [
+        { id: 'amplitude', label: '\u771f\u5b9e\u632f\u5e45' },
+        { id: 'dbLinear', label: 'dB \u7ebf\u6027' },
+        { id: 'legacy', label: '\u65e7\u7248\u66f2\u7ebf' }
     ];
 
     var ICON_CELL = 96;
+    var VOLUME_RIGHT_OFFSET_DIP = 26;
     var ICON_INDEX = {
         stop: 0,
         play: 1,
@@ -20,7 +17,9 @@
         next: 4,
         shuffle: 5,
         addFiles: 6,
-        repeatOne: 7
+        repeatOne: 7,
+        volumeUp: 8,
+        volumeOff: 9
     };
     var ICONS = gdi.Image(fusionAssetPath('transport-icons.png'));
 
@@ -39,9 +38,14 @@
         this.rect = null;
         this.buttonRects = [];
         this.statusRect = null;
-        this.orderRect = null;
+        this.muteRect = null;
+        this.volumeLabelRect = null;
+        this.volumeRect = null;
+        this.volumeControlRect = null;
+        this.volumeMenuRect = null;
         this.hovered = '';
         this.pressed = '';
+        this.volumeDragging = false;
     }
 
     TransportControls.prototype.layout = function (rect) {
@@ -49,17 +53,78 @@
         var s = ns.Theme.s;
         var padding = Math.min(s(5), Math.floor(rect.w / 20));
         var gap = rect.w >= s(460) ? s(4) : 1;
-        var orderWidth = ns.Util.clamp(Math.round(rect.w * 0.18), s(72), s(152));
-        var statusMinimum = rect.w >= s(480) ? s(48) : 0;
-        var available = Math.max(0, rect.w - padding * 2 - orderWidth - statusMinimum - gap * 8);
-        var buttonSize = Math.min(s(30), Math.floor(available / BUTTONS.length));
-        if (buttonSize < 1) {
-            orderWidth = Math.max(0, rect.w - padding * 2 - BUTTONS.length);
-            buttonSize = Math.max(0, Math.floor((rect.w - padding * 2 - orderWidth) / BUTTONS.length));
+        var buttonSize = Math.min(s(30), Math.max(1, rect.h - s(6)));
+        var labelWidth = Math.min(s(66), Math.max(0, rect.w));
+        var trackWidth = ns.Util.clamp(Math.round(rect.w * 0.15), s(96), s(180));
+        var gapCount = BUTTONS.length + 3;
+        var buttonCount = BUTTONS.length + 1;
+
+        function fixedWidth(size, track, label, spacing) {
+            return padding * 2 + buttonCount * size + track + label + gapCount * spacing;
+        }
+
+        if (fixedWidth(buttonSize, trackWidth, labelWidth, gap) > rect.w) {
+            gap = 1;
+            var availableForButtons = rect.w - padding * 2 - trackWidth - labelWidth - gapCount * gap;
+            buttonSize = Math.min(buttonSize, Math.max(1, Math.floor(availableForButtons / buttonCount)));
+        }
+        if (fixedWidth(buttonSize, trackWidth, labelWidth, gap) > rect.w) {
+            trackWidth = Math.max(0, rect.w - padding * 2 - buttonCount * buttonSize -
+                labelWidth - gapCount * gap);
+        }
+        if (fixedWidth(buttonSize, trackWidth, labelWidth, gap) > rect.w) {
+            labelWidth = Math.max(0, rect.w - padding * 2 - buttonCount * buttonSize -
+                trackWidth - gapCount * gap);
+        }
+        if (fixedWidth(buttonSize, trackWidth, labelWidth, gap) > rect.w) {
             gap = 0;
+            buttonSize = Math.min(buttonSize, Math.max(0, Math.floor(
+                (rect.w - padding * 2 - trackWidth - labelWidth) / buttonCount)));
         }
 
         var buttonY = rect.y + Math.max(0, Math.floor((rect.h - buttonSize) / 2));
+        var right = rect.x + rect.w - padding;
+        var volumeHeight = Math.min(s(6), rect.h);
+        var originalVolumeX = right - trackWidth;
+        var originalLabelX = originalVolumeX - gap - labelWidth;
+        var volumeOffset = Math.min(s(VOLUME_RIGHT_OFFSET_DIP),
+            Math.max(0, originalLabelX - rect.x));
+        this.volumeRect = {
+            x: originalVolumeX - volumeOffset,
+            y: rect.y + Math.floor((rect.h - volumeHeight) / 2),
+            w: trackWidth,
+            h: volumeHeight
+        };
+        this.volumeLabelRect = {
+            x: originalLabelX - volumeOffset,
+            y: rect.y,
+            w: labelWidth,
+            h: rect.h
+        };
+        this.muteRect = {
+            id: 'mute',
+            label: 'Mute',
+            x: originalLabelX - gap - buttonSize,
+            y: buttonY,
+            w: buttonSize,
+            h: buttonSize
+        };
+        var volumeEnd = this.volumeRect.x + this.volumeRect.w;
+        this.volumeControlRect = {
+            x: this.muteRect.x,
+            y: rect.y,
+            w: Math.max(0, volumeEnd - this.muteRect.x),
+            h: rect.h
+        };
+        var menuLeft = Math.max(this.volumeLabelRect.x,
+            this.muteRect.x + this.muteRect.w + gap);
+        this.volumeMenuRect = {
+            x: menuLeft,
+            y: rect.y,
+            w: Math.max(0, volumeEnd - menuLeft),
+            h: rect.h
+        };
+
         var x = rect.x + padding;
         this.buttonRects = [];
         for (var i = 0; i < BUTTONS.length; ++i) {
@@ -73,18 +138,10 @@
             });
             x += buttonSize + gap;
         }
-
-        var orderHeight = Math.max(0, Math.min(s(28), rect.h - s(6)));
-        this.orderRect = {
-            x: Math.max(x + gap, rect.x + rect.w - padding - orderWidth),
-            y: rect.y + Math.max(0, Math.floor((rect.h - orderHeight) / 2)),
-            w: Math.max(0, Math.min(orderWidth, rect.x + rect.w - padding - Math.max(x + gap, rect.x + rect.w - padding - orderWidth))),
-            h: orderHeight
-        };
         this.statusRect = {
-            x: x + gap,
+            x: x,
             y: rect.y,
-            w: Math.max(0, this.orderRect.x - x - gap * 2),
+            w: Math.max(0, this.muteRect.x - gap - x),
             h: rect.h
         };
     };
@@ -99,12 +156,30 @@
         for (var i = 0; i < this.buttonRects.length; ++i) {
             if (ns.Util.inRect(x, y, this.buttonRects[i])) return this.buttonRects[i].id;
         }
-        if (ns.Util.inRect(x, y, this.orderRect)) return 'order';
+        if (ns.Util.inRect(x, y, this.muteRect)) return 'mute';
         return '';
+    };
+
+    TransportControls.prototype.volumeHitRect = function () {
+        var expansion = ns.Theme.s(4);
+        return {
+            x: this.volumeRect.x - expansion,
+            y: this.rect.y,
+            w: this.volumeRect.w + expansion * 2,
+            h: this.rect.h
+        };
     };
 
     TransportControls.prototype.playbackSummary = function () {
         return this.model.nowPlayingSummary();
+    };
+
+    TransportControls.prototype.volumePosition = function () {
+        return ns.VolumeMapping.toPosition(fb.Volume, ns.Settings.volumeMapping);
+    };
+
+    TransportControls.prototype.volumeText = function () {
+        return fb.Volume <= -100 ? '\u2212\u221e dB' : fb.Volume.toFixed(2) + ' dB';
     };
 
     TransportControls.prototype.showNowPlayingMenu = function (x, y) {
@@ -135,9 +210,27 @@
         return true;
     };
 
+    TransportControls.prototype.showVolumeMappingMenu = function (x, y) {
+        var menu = window.CreatePopupMenu();
+        var selected = 0;
+        for (var i = 0; i < VOLUME_MAPPING_MENU.length; ++i) {
+            menu.AppendMenuItem(MF_STRING, i + 1, VOLUME_MAPPING_MENU[i].label);
+            if (VOLUME_MAPPING_MENU[i].id === ns.Settings.volumeMapping) selected = i + 1;
+        }
+        menu.CheckMenuRadioItem(1, VOLUME_MAPPING_MENU.length, selected || 1);
+        var result = menu.TrackPopupMenu(x, y);
+        if (result >= 1 && result <= VOLUME_MAPPING_MENU.length) {
+            ns.Settings.setVolumeMapping(VOLUME_MAPPING_MENU[result - 1].id);
+            window.RepaintRect(this.volumeControlRect.x, this.volumeControlRect.y,
+                this.volumeControlRect.w, this.volumeControlRect.h);
+        }
+        return true;
+    };
+
     TransportControls.prototype.context = function (x, y) {
-        if (!ns.Util.inRect(x, y, this.statusRect)) return false;
-        return this.showNowPlayingMenu(x, y);
+        if (ns.Util.inRect(x, y, this.volumeMenuRect)) return this.showVolumeMappingMenu(x, y);
+        if (ns.Util.inRect(x, y, this.statusRect)) return this.showNowPlayingMenu(x, y);
+        return false;
     };
 
     TransportControls.prototype.drawButtonBackground = function (gr, rect, id, enabled) {
@@ -155,6 +248,7 @@
     TransportControls.prototype.iconId = function (id) {
         if (id === 'playPause') return fb.IsPlaying && !fb.IsPaused ? 'pause' : 'play';
         if (id === 'repeatTrack') return 'repeatOne';
+        if (id === 'mute') return fb.Volume <= -100 ? 'volumeOff' : 'volumeUp';
         return id;
     };
 
@@ -179,46 +273,51 @@
         gr.SetInterpolationMode(0);
     };
 
+    TransportControls.prototype.drawButton = function (gr, rect) {
+        var enabled = this.isEnabled(rect.id);
+        this.drawButtonBackground(gr, rect, rect.id, enabled);
+        this.drawIcon(gr, rect.id, rect, enabled);
+    };
+
+    TransportControls.prototype.drawVolume = function (gr) {
+        if (!this.volumeRect || this.volumeRect.w <= 0 || this.volumeRect.h <= 0) return;
+        var p = ns.Theme.palette;
+        var ratio = this.volumePosition();
+        gr.FillSolidRect(this.volumeRect.x, this.volumeRect.y, this.volumeRect.w, this.volumeRect.h, p.window);
+        gr.DrawRect(this.volumeRect.x, this.volumeRect.y, Math.max(0, this.volumeRect.w - 1),
+            Math.max(0, this.volumeRect.h - 1), 1, p.border);
+        var fill = Math.round(this.volumeRect.w * ratio);
+        if (fill > 0) gr.FillSolidRect(this.volumeRect.x, this.volumeRect.y, fill, this.volumeRect.h, p.highlight);
+        var thumb = Math.min(ns.Theme.s(10), Math.max(2, this.rect.h - ns.Theme.s(5)));
+        var cx = this.volumeRect.x + Math.round((this.volumeRect.w - 1) * ratio);
+        var thumbX = ns.Util.clamp(cx - Math.floor(thumb / 2), this.volumeRect.x,
+            this.volumeRect.x + this.volumeRect.w - thumb);
+        var thumbY = this.rect.y + Math.floor((this.rect.h - thumb) / 2);
+        gr.FillSolidRect(thumbX, thumbY, thumb, thumb, p.highlight);
+        gr.DrawRect(thumbX, thumbY, Math.max(0, thumb - 1), Math.max(0, thumb - 1), 1, p.darkBorder);
+    };
+
     TransportControls.prototype.draw = function (gr) {
         if (!this.rect || this.rect.w <= 0 || this.rect.h <= 0) return;
         var p = ns.Theme.palette;
         var f = ns.Theme.fonts;
         gr.FillSolidRect(this.rect.x, this.rect.y, this.rect.w, this.rect.h, p.base);
-        for (var i = 0; i < this.buttonRects.length; ++i) {
-            var rect = this.buttonRects[i];
-            var enabled = this.isEnabled(rect.id);
-            this.drawButtonBackground(gr, rect, rect.id, enabled);
-            this.drawIcon(gr, rect.id, rect, enabled);
-        }
+        for (var i = 0; i < this.buttonRects.length; ++i) this.drawButton(gr, this.buttonRects[i]);
+        this.drawButton(gr, this.muteRect);
         ns.Util.drawText(gr, this.playbackSummary(), f.small, p.text, this.statusRect,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
-
-        if (this.orderRect.w > 0 && this.orderRect.h > 0) {
-            var orderActive = this.pressed === 'order';
-            var orderHover = this.hovered === 'order';
-            gr.FillSolidRect(this.orderRect.x, this.orderRect.y, this.orderRect.w, this.orderRect.h,
-                orderActive ? p.buttonPressed : (orderHover ? p.buttonHover : p.base));
-            gr.DrawRect(this.orderRect.x, this.orderRect.y, Math.max(0, this.orderRect.w - 1), Math.max(0, this.orderRect.h - 1), 1, p.border);
-            var arrowWidth = Math.min(ns.Theme.s(16), Math.max(0, Math.floor(this.orderRect.w * 0.2)));
-            ns.Util.drawText(gr, ORDER_NAMES[ns.Util.clamp(plman.PlaybackOrder, 0, ORDER_NAMES.length - 1)], f.small, p.text,
-                { x: this.orderRect.x + ns.Theme.s(7), y: this.orderRect.y,
-                    w: Math.max(0, this.orderRect.w - arrowWidth - ns.Theme.s(10)), h: this.orderRect.h });
-            if (arrowWidth >= 4) {
-                ns.Util.drawText(gr, '\u25be', f.small, p.text,
-                    { x: this.orderRect.x + this.orderRect.w - arrowWidth - ns.Theme.s(2), y: this.orderRect.y,
-                        w: arrowWidth, h: this.orderRect.h },
-                    DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-            }
-        }
-        gr.DrawLine(this.rect.x, this.rect.y + this.rect.h - 1, this.rect.x + this.rect.w, this.rect.y + this.rect.h - 1, 1, p.border);
+        ns.Util.drawText(gr, this.volumeText(), f.small, p.text, this.volumeLabelRect,
+            DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        this.drawVolume(gr);
+        gr.DrawLine(this.rect.x, this.rect.y + this.rect.h - 1,
+            this.rect.x + this.rect.w, this.rect.y + this.rect.h - 1, 1, p.border);
     };
 
-    TransportControls.prototype.showOrderMenu = function () {
-        var menu = window.CreatePopupMenu();
-        for (var i = 0; i < ORDER_NAMES.length; ++i) menu.AppendMenuItem(MF_STRING, i + 1, ORDER_NAMES[i]);
-        menu.CheckMenuRadioItem(1, ORDER_NAMES.length, ns.Util.clamp(plman.PlaybackOrder, 0, ORDER_NAMES.length - 1) + 1);
-        var result = menu.TrackPopupMenu(this.orderRect.x, this.orderRect.y + this.orderRect.h);
-        if (result >= 1 && result <= ORDER_NAMES.length) plman.PlaybackOrder = result - 1;
+    TransportControls.prototype.setVolumeFromX = function (x) {
+        var ratio = ns.Util.clamp((x - this.volumeRect.x) / Math.max(1, this.volumeRect.w - 1), 0, 1);
+        fb.Volume = ns.VolumeMapping.toDb(ratio, ns.Settings.volumeMapping);
+        window.RepaintRect(this.volumeControlRect.x, this.volumeControlRect.y,
+            this.volumeControlRect.w, this.volumeControlRect.h);
     };
 
     TransportControls.prototype.invoke = function (id) {
@@ -232,18 +331,27 @@
         else if (id === 'shuffle') plman.PlaybackOrder = plman.PlaybackOrder === 4 ? 0 : 4;
         else if (id === 'repeatTrack') plman.PlaybackOrder = plman.PlaybackOrder === 2 ? 0 : 2;
         else if (id === 'addFiles') fb.RunMainMenuCommand('File/Add files...');
-        else if (id === 'order') this.showOrderMenu();
+        else if (id === 'mute') fb.VolumeMute();
     };
 
     TransportControls.prototype.down = function (x, y) {
+        if (ns.Util.inRect(x, y, this.volumeHitRect())) {
+            this.volumeDragging = true;
+            this.setVolumeFromX(x);
+            return true;
+        }
         var id = this.hit(x, y);
-        if (!id || (id !== 'order' && !this.isEnabled(id))) return false;
+        if (!id || !this.isEnabled(id)) return false;
         this.pressed = id;
         window.RepaintRect(this.rect.x, this.rect.y, this.rect.w, this.rect.h);
         return true;
     };
 
     TransportControls.prototype.move = function (x, y) {
+        if (this.volumeDragging) {
+            this.setVolumeFromX(x);
+            return true;
+        }
         var next = this.hit(x, y);
         var changed = next !== this.hovered;
         this.hovered = next;
@@ -252,19 +360,31 @@
     };
 
     TransportControls.prototype.up = function (x, y) {
+        if (this.volumeDragging) {
+            this.setVolumeFromX(x);
+            this.volumeDragging = false;
+            return true;
+        }
         if (!this.pressed) return false;
         var id = this.pressed;
         this.pressed = '';
-        if (this.hit(x, y) === id && (id === 'order' || this.isEnabled(id))) this.invoke(id);
+        if (this.hit(x, y) === id && this.isEnabled(id)) this.invoke(id);
         if (this.rect) window.RepaintRect(this.rect.x, this.rect.y, this.rect.w, this.rect.h);
         return true;
     };
 
     TransportControls.prototype.leave = function () {
-        if (!this.hovered && !this.pressed) return false;
+        if (!this.hovered && !this.pressed && !this.volumeDragging) return false;
         this.hovered = '';
         this.pressed = '';
+        this.volumeDragging = false;
         if (this.rect) window.RepaintRect(this.rect.x, this.rect.y, this.rect.w, this.rect.h);
+        return true;
+    };
+
+    TransportControls.prototype.wheel = function (x, y, step) {
+        if (!ns.Util.inRect(x, y, this.volumeMenuRect)) return false;
+        if (step > 0) fb.VolumeUp(); else fb.VolumeDown();
         return true;
     };
 
