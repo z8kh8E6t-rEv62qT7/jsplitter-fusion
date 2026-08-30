@@ -50,11 +50,12 @@
         return defaultNowPlayingFormat;
     }
 
-    function readVolumeMapping() {
-        var value = window.GetProperty(prefix + 'volume.mapping', ns.VolumeMapping.defaultId);
-        var normalized = ns.VolumeMapping.normalize(value);
-        if (String(value) !== normalized) set('volume.mapping', normalized);
-        return normalized;
+    function readVolumeCurveK() {
+        var value = window.GetProperty(prefix + 'volume.curveK', '');
+        var validation = ns.VolumeMapping.validateK(value);
+        if (validation.ok) return validation.value;
+        set('volume.curveK', ns.VolumeMapping.defaultK);
+        return ns.VolumeMapping.defaultK;
     }
 
     function readColumnOrder() {
@@ -104,7 +105,7 @@
         rightWidth: number('rightWidth', ns.Theme.s(320), ns.Theme.s(220), ns.Theme.s(640)),
         defaultNowPlayingFormat: defaultNowPlayingFormat,
         nowPlayingFormat: readNowPlayingFormat(),
-        volumeMapping: readVolumeMapping(),
+        volumeCurveK: readVolumeCurveK(),
         columnOrder: readColumnOrder(),
         columns: [
             number('column.index', ns.Theme.s(42), ns.Theme.s(28), ns.Theme.s(10000)),
@@ -136,10 +137,17 @@
             this.nowPlayingFormat = defaultNowPlayingFormat;
             set('nowPlaying.format', defaultNowPlayingFormat);
         },
-        setVolumeMapping: function (value) {
-            this.volumeMapping = ns.VolumeMapping.normalize(value);
-            set('volume.mapping', this.volumeMapping);
-            return this.volumeMapping;
+        setVolumeCurveK: function (value) {
+            var validation = ns.VolumeMapping.validateK(value);
+            if (!validation.ok) return validation;
+            this.volumeCurveK = validation.value;
+            set('volume.curveK', this.volumeCurveK);
+            return validation;
+        },
+        resetVolumeCurveK: function () {
+            this.volumeCurveK = ns.VolumeMapping.defaultK;
+            set('volume.curveK', this.volumeCurveK);
+            return this.volumeCurveK;
         },
         setColumn: function (index, value) {
             this.columns[index] = value;

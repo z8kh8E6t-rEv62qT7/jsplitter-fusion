@@ -21,18 +21,25 @@ function assertClose(actual, expected, epsilon = 1e-10) {
     const context = { FusionUI: {} };
     run('core/volume-mapping.js', context);
     const mapping = context.FusionUI.VolumeMapping;
-    assert.deepStrictEqual(Array.from(mapping.ids), ['amplitude', 'dbLinear', 'legacy']);
-    assert.strictEqual(mapping.defaultId, 'amplitude');
-    assert.strictEqual(mapping.normalize('unknown'), 'amplitude');
-    assertClose(mapping.toPosition(-20, 'amplitude'), 0.1);
-    assertClose(mapping.toPosition(-50, 'dbLinear'), 0.5);
-    assertClose(mapping.toPosition(-10, 'legacy'), 0.5);
-    assert.strictEqual(mapping.toDb(0, 'amplitude'), -100);
-    assert.strictEqual(mapping.toPosition(5, 'amplitude'), 1);
-    assert.strictEqual(mapping.toDb(2, 'amplitude'), 0);
-    for (const id of mapping.ids) {
+    assert.strictEqual(mapping.defaultK, 0.5);
+    assert.strictEqual(mapping.minK, 0.1);
+    assert.strictEqual(mapping.maxK, 10);
+    assertClose(mapping.toPosition(-20, 0.5), Math.pow(10, -0.5));
+    assertClose(mapping.toPosition(-20, 1), 0.1);
+    assertClose(mapping.toPosition(-20, 2), 0.01);
+    assert.strictEqual(mapping.toDb(0, 0.5), -100);
+    assert.strictEqual(mapping.toPosition(5, 0.5), 1);
+    assert.strictEqual(mapping.toDb(2, 0.5), 0);
+    assert.strictEqual(mapping.validateK('0,75').value, 0.75);
+    assert.strictEqual(mapping.validateK('').ok, false);
+    assert.strictEqual(mapping.validateK('not-a-number').ok, false);
+    assert.strictEqual(mapping.validateK(0.09).ok, false);
+    assert.strictEqual(mapping.validateK(10.01).ok, false);
+    assert.strictEqual(mapping.normalizeK('invalid'), 0.5);
+    assert.strictEqual(mapping.formatK(0.5000), '0.5');
+    for (const k of [0.5, 1, 2]) {
         for (const db of [-100, -80, -50, -20, -10, 0]) {
-            assertClose(mapping.toDb(mapping.toPosition(db, id), id), db, 1e-8);
+            assertClose(mapping.toDb(mapping.toPosition(db, k), k), db, 1e-8);
         }
     }
 }
@@ -75,7 +82,8 @@ function settingsContext(initial) {
     assert.deepStrictEqual(Array.from(result.settings.columnOrder), [0, 1, 2, 3, 5, 4]);
     assert.strictEqual(result.settings.nowPlayingFormat,
         '$if2(%title%,$if2(%filename_ext%,no title))');
-    assert.strictEqual(result.settings.volumeMapping, 'amplitude');
+    assert.strictEqual(result.settings.volumeCurveK, 0.5);
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.curveK'), 0.5);
     const changed = result.settings.setNowPlayingFormat('%artist% — %title%', { preview: 'Artist — Title' });
     assert.strictEqual(changed.ok, true);
     assert.strictEqual(changed.preview, 'Artist — Title');
@@ -92,13 +100,25 @@ function settingsContext(initial) {
 }
 
 {
-    const result = settingsContext({ 'jsplitterFusion.volume.mapping': 'unknown' });
-    assert.strictEqual(result.settings.volumeMapping, 'amplitude');
-    assert.strictEqual(result.properties.get('jsplitterFusion.volume.mapping'), 'amplitude');
-    assert.strictEqual(result.settings.setVolumeMapping('legacy'), 'legacy');
+    const result = settingsContext({
+        'jsplitterFusion.volume.curveK': '0,75',
+        'jsplitterFusion.volume.mapping': 'legacy'
+    });
+    assert.strictEqual(result.settings.volumeCurveK, 0.75);
     assert.strictEqual(result.properties.get('jsplitterFusion.volume.mapping'), 'legacy');
-    assert.strictEqual(result.settings.setVolumeMapping('invalid'), 'amplitude');
-    assert.strictEqual(result.properties.get('jsplitterFusion.volume.mapping'), 'amplitude');
+    assert.strictEqual(result.settings.setVolumeCurveK('2').value, 2);
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.curveK'), 2);
+    assert.strictEqual(result.settings.setVolumeCurveK('invalid').ok, false);
+    assert.strictEqual(result.settings.volumeCurveK, 2);
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.curveK'), 2);
+    assert.strictEqual(result.settings.resetVolumeCurveK(), 0.5);
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.curveK'), 0.5);
+}
+
+{
+    const result = settingsContext({ 'jsplitterFusion.volume.curveK': 20 });
+    assert.strictEqual(result.settings.volumeCurveK, 0.5);
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.curveK'), 0.5);
 }
 
 function detailRecord(overrides) {
@@ -469,9 +489,10 @@ function handleList(handles, duration, size) {
     let volumeDownCount = 0;
     const mainMenuCommands = [];
     const menuItems = [];
-    const checkedItems = [];
     const repaints = [];
+    const messages = [];
     let popupResult = 2;
+    let inputValue = '0,75';
     const context = {
         FusionUI: {
             Theme: { s: value => value },
@@ -482,9 +503,14 @@ function handleList(handles, duration, size) {
             },
             Settings: {
                 nowPlayingFormat: '%title%',
-                volumeMapping: 'amplitude',
+                volumeCurveK: 0.5,
                 resetNowPlayingFormat: () => { resetCount += 1; },
-                setVolumeMapping(value) { this.volumeMapping = value; return value; }
+                setVolumeCurveK(value) {
+                    const validation = context.FusionUI.VolumeMapping.validateK(value);
+                    if (validation.ok) this.volumeCurveK = validation.value;
+                    return validation;
+                },
+                resetVolumeCurveK() { this.volumeCurveK = 0.5; return this.volumeCurveK; }
             }
         },
         fusionAssetPath: name => name,
@@ -502,11 +528,16 @@ function handleList(handles, duration, size) {
         window: {
             CreatePopupMenu: () => ({
                 AppendMenuItem: (_flags, id, label) => menuItems.push({ id, label }),
-                CheckMenuRadioItem: (first, last, selected) => checkedItems.push({ first, last, selected }),
                 TrackPopupMenu: () => popupResult
             }),
             RepaintRect: (...args) => repaints.push(args)
         },
+        utils: {
+            InputBox: () => inputValue,
+            MessageBox: (message, title) => messages.push({ message, title })
+        },
+        MessageBoxButtons: { Ok: 0 },
+        MessageBoxIcon: { Error: 0 },
         MF_STRING: 0
     };
     run('core/volume-mapping.js', context);
@@ -561,20 +592,32 @@ function handleList(handles, duration, size) {
     assert.strictEqual(controls.context(controls.statusRect.x + 1, 10), true);
     assert.strictEqual(resetCount, 1);
     menuItems.length = 0;
-    popupResult = 2;
+    popupResult = 1;
     const volumeBeforeMenu = context.fb.Volume;
+    const positionBeforeMenu = controls.volumePosition();
     assert.strictEqual(controls.context(controls.volumeMenuRect.x + 1, 10), true);
-    assert.strictEqual(context.FusionUI.Settings.volumeMapping, 'dbLinear');
+    assert.strictEqual(context.FusionUI.Settings.volumeCurveK, 0.75);
     assert.strictEqual(context.fb.Volume, volumeBeforeMenu);
-    assert.deepStrictEqual(menuItems.map(item => item.label), ['真实振幅', 'dB 线性', '旧版曲线']);
-    assert.deepStrictEqual(checkedItems, [{ first: 1, last: 3, selected: 1 }]);
+    assert.notStrictEqual(controls.volumePosition(), positionBeforeMenu);
+    assert.deepStrictEqual(menuItems.map(item => item.label), ['曲线系数 k…（当前 0.5）', '重置为 0.5']);
 
-    context.FusionUI.Settings.volumeMapping = 'amplitude';
+    menuItems.length = 0;
+    popupResult = 2;
+    controls.context(controls.volumeMenuRect.x + 1, 10);
+    assert.strictEqual(context.FusionUI.Settings.volumeCurveK, 0.5);
+
+    menuItems.length = 0;
+    popupResult = 1;
+    inputValue = 'invalid';
+    controls.context(controls.volumeMenuRect.x + 1, 10);
+    assert.strictEqual(context.FusionUI.Settings.volumeCurveK, 0.5);
+    assert.strictEqual(messages.length, 1);
+
     controls.volumeRect = { x: 600, y: 17, w: 101, h: 6 };
     controls.volumeControlRect = { x: 500, y: 0, w: 295, h: 40 };
     controls.volumeMenuRect = { x: 530, y: 0, w: 265, h: 40 };
     controls.setVolumeFromX(610);
-    assertClose(context.fb.Volume, -20);
+    assertClose(context.fb.Volume, -40);
     assert.strictEqual(controls.down(650, 20), true);
     assert.strictEqual(controls.volumeDragging, true);
     assert.strictEqual(controls.move(660, 20), true);
@@ -718,7 +761,18 @@ const transportSource = fs.readFileSync(path.join(sourceRoot, 'views/transport-c
 assert(!transportSource.includes('ORDER_NAMES'));
 assert(!transportSource.includes('orderRect'));
 assert(!transportSource.includes('showOrderMenu'));
+assert(!transportSource.includes('VOLUME_MAPPING_MENU'));
+assert(!transportSource.includes('CheckMenuRadioItem'));
+assert(!transportSource.includes('setVolumeMapping'));
 assert(transportSource.includes('fb.VolumeMute()'));
+
+const settingsSource = fs.readFileSync(path.join(sourceRoot, 'core/settings.js'), 'utf8');
+assert(!settingsSource.includes("GetProperty(prefix + 'volume.mapping'"));
+assert(settingsSource.includes("GetProperty(prefix + 'volume.curveK'"));
+
+const volumeMappingSource = fs.readFileSync(path.join(sourceRoot, 'core/volume-mapping.js'), 'utf8');
+assert(!volumeMappingSource.includes('dbLinear'));
+assert(!volumeMappingSource.includes('legacy'));
 
 const bottomSource = fs.readFileSync(path.join(sourceRoot, 'views/bottom-bar.js'), 'utf8');
 assert(!bottomSource.includes('volumeControlRect'));
