@@ -25,6 +25,7 @@ function fusionAssetPath(relativePath) {
 try {
     fusionInclude('theme.js');
     fusionInclude('core\\utils.js');
+    fusionInclude('core\\volume-mapping.js');
     fusionInclude('core\\settings.js');
     fusionInclude('core\\playlist-model.js');
     fusionInclude('core\\artwork.js');

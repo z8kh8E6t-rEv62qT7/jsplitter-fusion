@@ -1,6 +1,12 @@
 (function (ns) {
     'use strict';
 
+    var VOLUME_MAPPING_MENU = [
+        { id: 'amplitude', label: '\u771f\u5b9e\u632f\u5e45' },
+        { id: 'dbLinear', label: 'dB \u7ebf\u6027' },
+        { id: 'legacy', label: '\u65e7\u7248\u66f2\u7ebf' }
+    ];
+
     function BottomBar(model) {
         this.model = model;
         this.transport = new ns.TransportControls(model);
@@ -10,7 +16,9 @@
         this.elapsedRect = null;
         this.remainingRect = null;
         this.summaryRect = null;
+        this.volumeLabelRect = null;
         this.volumeRect = null;
+        this.volumeControlRect = null;
         this.seekDragging = false;
         this.seekRatio = 0;
         this.volumeDragging = false;
@@ -65,13 +73,26 @@
         };
 
         var rightWidth = Math.min(s(250), Math.max(0, Math.round(rect.w * 0.27)));
+        var volumeAreaLeft = rect.x + rect.w - rightWidth;
         var volumeLeft = rect.x + rect.w - rightWidth + Math.min(s(72), rightWidth);
         var volumeHeight = Math.min(s(6), this.summaryRowHeight);
+        this.volumeLabelRect = {
+            x: volumeAreaLeft,
+            y: this.summaryRect.y,
+            w: Math.min(s(66), rightWidth),
+            h: this.summaryRect.h
+        };
         this.volumeRect = {
             x: volumeLeft,
             y: this.summaryRect.y + Math.floor((this.summaryRowHeight - volumeHeight) / 2),
             w: Math.max(0, rect.x + rect.w - s(8) - volumeLeft),
             h: volumeHeight
+        };
+        this.volumeControlRect = {
+            x: volumeAreaLeft,
+            y: this.summaryRect.y,
+            w: rightWidth,
+            h: this.summaryRect.h
         };
     };
 
@@ -82,7 +103,7 @@
     };
 
     BottomBar.prototype.volumePosition = function () {
-        return ns.Util.clamp(Math.pow(2, fb.Volume / 10), 0, 1);
+        return ns.VolumeMapping.toPosition(fb.Volume, ns.Settings.volumeMapping);
     };
 
     BottomBar.prototype.audioSummary = function () {
@@ -207,9 +228,7 @@
             { x: this.summaryRect.x + libraryWidth + selectionWidth, y: this.summaryRect.y,
                 w: audioWidth, h: this.summaryRect.h },
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
-        ns.Util.drawText(gr, fb.Volume.toFixed(2) + ' dB', f.small, p.text,
-            { x: this.summaryRect.x + this.summaryRect.w - rightWidth, y: this.summaryRect.y,
-                w: Math.min(s(66), rightWidth), h: this.summaryRect.h },
+        ns.Util.drawText(gr, fb.Volume.toFixed(2) + ' dB', f.small, p.text, this.volumeLabelRect,
             DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
         this.drawVolume(gr);
         gr.DrawLine(this.summaryRect.x, this.summaryRect.y,
@@ -232,9 +251,8 @@
     };
 
     BottomBar.prototype.setVolumeFromX = function (x) {
-        var ratio = ns.Util.clamp((x - this.volumeRect.x) / Math.max(1, this.volumeRect.w), 0, 1);
-        var db = ratio <= 0 ? -100 : 10 * Math.log(ratio) / Math.LN2;
-        fb.Volume = ns.Util.clamp(db, -100, 0);
+        var ratio = ns.Util.clamp((x - this.volumeRect.x) / Math.max(1, this.volumeRect.w - 1), 0, 1);
+        fb.Volume = ns.VolumeMapping.toDb(ratio, ns.Settings.volumeMapping);
     };
 
     BottomBar.prototype.down = function (x, y) {
@@ -302,6 +320,22 @@
     };
 
     BottomBar.prototype.context = function (x, y) {
+        if (ns.Util.inRect(x, y, this.volumeControlRect)) {
+            var menu = window.CreatePopupMenu();
+            var selected = 0;
+            for (var i = 0; i < VOLUME_MAPPING_MENU.length; ++i) {
+                menu.AppendMenuItem(MF_STRING, i + 1, VOLUME_MAPPING_MENU[i].label);
+                if (VOLUME_MAPPING_MENU[i].id === ns.Settings.volumeMapping) selected = i + 1;
+            }
+            menu.CheckMenuRadioItem(1, VOLUME_MAPPING_MENU.length, selected || 1);
+            var result = menu.TrackPopupMenu(x, y);
+            if (result >= 1 && result <= VOLUME_MAPPING_MENU.length) {
+                ns.Settings.setVolumeMapping(VOLUME_MAPPING_MENU[result - 1].id);
+                window.RepaintRect(this.volumeControlRect.x, this.volumeControlRect.y,
+                    this.volumeControlRect.w, this.volumeControlRect.h);
+            }
+            return true;
+        }
         return this.transport.context(x, y);
     };
 

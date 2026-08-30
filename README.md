@@ -73,7 +73,25 @@ JSplitter 必须作为 Columns UI 面板运行。`main.js` 还会加载 JSplitte
 - 右侧播放顺序菜单包含 Default、Repeat Playlist、Repeat Track、Random、Shuffle Tracks、Shuffle Albums 和 Shuffle Folders。
 - 进度条支持点击定位、拖动预览和释放跳转；未知长度流媒体禁用跳转。
 - 音量条支持点击、拖动和滚轮调节。
+- 右键 dB 数值或音量条可切换真实振幅、dB 线性和旧版三种位置映射。
 - 进度条上方的 Now Playing 文本始终跟随正在播放项目，不受列表选择影响；停止后留空。
+
+## 音量条映射
+
+音量条只改变 dB 值与滑块位置之间的换算，不改变 foobar2000 的 `-100…0 dB` 音量范围或音频处理。默认使用标准振幅曲线：
+
+```text
+position = 10^(dB/20)
+dB = 20·log10(position)
+```
+
+右键 dB 数值或音量条，可以在三种预设之间切换：
+
+- **真实振幅**（`amplitude`）：标准振幅关系，`-20 dB` 位于 10%。
+- **dB 线性**（`dbLinear`）：`-100…0 dB` 均匀分布，`-50 dB` 位于 50%。
+- **旧版曲线**（`legacy`）：每降低 10 dB 位置减半，`-10 dB` 位于 50%。
+
+选择结果保存在 `jsplitterFusion.volume.mapping`。属性缺失或值无效时使用 `amplitude`；无效值会自动修复。滚轮仍调用 foobar2000 原生音量步进，不受位置映射影响。
 
 ## Now Playing 标题模板
 
@@ -104,6 +122,7 @@ $if2(%title%,$if2(%filename_ext%,no title))
 | `scroll.<playlist-guid>` | 各播放列表纵向位置 |
 | `hscroll.<playlist-guid>` | 各播放列表横向位置 |
 | `nowPlaying.format` | Now Playing 标题模板 |
+| `volume.mapping` | 音量条位置映射 |
 
 完整属性名需要加上 `jsplitterFusion.` 前缀。正常情况下应通过界面操作修改这些属性，而不是手动编辑配置文件。
 
@@ -117,6 +136,7 @@ core/
   playlist-model.js             播放列表、显示上下文和详情数据
   settings.js                   面板属性读取、校验与迁移
   utils.js                      绘制、格式化和通用辅助函数
+  volume-mapping.js             音量 dB 与滑块位置双向换算
 views/
   app.js                        总体布局与事件分发
   playlist-manager.js           左侧播放列表管理器
@@ -128,6 +148,8 @@ views/
 assets/
   transport-icons.png           播放控制图标精灵图
   README.md                     图标来源与精灵单元说明
+tests/
+  jsplitter-fusion-tests.js      Node.js 回归测试入口
 ```
 
 `main.js` 使用相对路径按依赖顺序加载各模块。新增模块时需要同时更新入口加载顺序；模块通过 `FusionUI` 命名空间共享内部接口。
@@ -142,10 +164,10 @@ assets/
 find . -type f -name '*.js' -print0 | xargs -0 -n1 node --check
 ```
 
-在本项目原始工作区中，回归测试入口位于仓库上一级：
+从仓库根目录运行回归测试：
 
 ```bash
-node ../jsplitter-fusion-tests.js
+node tests/jsplitter-fusion-tests.js
 ```
 
 提交前还应确认：

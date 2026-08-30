@@ -50,6 +50,13 @@
         return defaultNowPlayingFormat;
     }
 
+    function readVolumeMapping() {
+        var value = window.GetProperty(prefix + 'volume.mapping', ns.VolumeMapping.defaultId);
+        var normalized = ns.VolumeMapping.normalize(value);
+        if (String(value) !== normalized) set('volume.mapping', normalized);
+        return normalized;
+    }
+
     function readColumnOrder() {
         var raw = String(window.GetProperty(prefix + 'column.order', ''));
         var parts = raw.split(',');
@@ -97,6 +104,7 @@
         rightWidth: number('rightWidth', ns.Theme.s(320), ns.Theme.s(220), ns.Theme.s(640)),
         defaultNowPlayingFormat: defaultNowPlayingFormat,
         nowPlayingFormat: readNowPlayingFormat(),
+        volumeMapping: readVolumeMapping(),
         columnOrder: readColumnOrder(),
         columns: [
             number('column.index', ns.Theme.s(42), ns.Theme.s(28), ns.Theme.s(10000)),
@@ -127,6 +135,11 @@
         resetNowPlayingFormat: function () {
             this.nowPlayingFormat = defaultNowPlayingFormat;
             set('nowPlaying.format', defaultNowPlayingFormat);
+        },
+        setVolumeMapping: function (value) {
+            this.volumeMapping = ns.VolumeMapping.normalize(value);
+            set('volume.mapping', this.volumeMapping);
+            return this.volumeMapping;
         },
         setColumn: function (index, value) {
             this.columns[index] = value;
