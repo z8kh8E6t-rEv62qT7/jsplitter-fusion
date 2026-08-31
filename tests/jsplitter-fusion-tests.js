@@ -609,7 +609,7 @@ function handleList(handles, duration, size) {
             MessageBox: (message, title) => messages.push({ message, title })
         },
         MessageBoxButtons: { Ok: 0 },
-        MessageBoxIcon: { Error: 0 },
+        MessageBoxIcon: { Error: 0, Information: 1 },
         MF_STRING: 0
     };
     run('core/volume-mapping.js', context);
@@ -672,9 +672,9 @@ function handleList(handles, duration, size) {
     assert.strictEqual(context.fb.Volume, volumeBeforeMenu);
     assert.notStrictEqual(controls.volumePosition(), positionBeforeMenu);
     assert.deepStrictEqual(menuItems.map(item => item.label),
-        ['曲线系数模式', '虚拟宽度模式', '曲线系数 k…（当前 0.5）', '重置为 0.5']);
+        ['曲线系数模式', '虚拟宽度模式', '曲线系数 k…（当前 0.5）', '重置为 0.5', '打开说明']);
     assert.deepStrictEqual(checkedItems, [{ first: 1, last: 2, selected: 1 }]);
-    assert.strictEqual(separatorCount, 1);
+    assert.strictEqual(separatorCount, 2);
 
     menuItems.length = 0;
     popupResult = 2;
@@ -691,7 +691,7 @@ function handleList(handles, duration, size) {
     assert.strictEqual(context.fb.Volume, volumeBeforeMenu);
     assert.notStrictEqual(controls.volumePosition(), virtualPositionBeforeMenu);
     assert.deepStrictEqual(menuItems.map(item => item.label),
-        ['曲线系数模式', '虚拟宽度模式', '虚拟宽度倍率 k…（当前 1）', '重置为 1']);
+        ['曲线系数模式', '虚拟宽度模式', '虚拟宽度倍率 k…（当前 1）', '重置为 1', '打开说明']);
     assert.deepStrictEqual(checkedItems[checkedItems.length - 1], { first: 1, last: 2, selected: 2 });
 
     menuItems.length = 0;
@@ -705,6 +705,15 @@ function handleList(handles, duration, size) {
     controls.context(controls.volumeMenuRect.x + 1, 10);
     assert.strictEqual(context.FusionUI.Settings.volumeVirtualWidthK, 1);
     assert.strictEqual(messages.length, 1);
+
+    popupResult = 5;
+    const repaintCountBeforeHelp = repaints.length;
+    controls.context(controls.volumeMenuRect.x + 1, 10);
+    assert.strictEqual(messages.length, 2);
+    assert.strictEqual(messages[1].title, '音量映射说明');
+    assert(messages[1].message.includes('k 越低'));
+    assert(messages[1].message.includes('k 越高'));
+    assert.strictEqual(repaints.length, repaintCountBeforeHelp);
 
     popupResult = 1;
     controls.context(controls.volumeMenuRect.x + 1, 10);

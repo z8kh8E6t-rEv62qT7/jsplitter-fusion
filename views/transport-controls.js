@@ -219,6 +219,8 @@
             (virtualMode ? '\u865a\u62df\u5bbd\u5ea6\u500d\u7387 k\u2026\uff08\u5f53\u524d ' :
                 '\u66f2\u7ebf\u7cfb\u6570 k\u2026\uff08\u5f53\u524d ') + current + '\uff09');
         menu.AppendMenuItem(MF_STRING, 4, '\u91cd\u7f6e\u4e3a ' + ns.VolumeMapping.formatK(defaultK, defaultK));
+        menu.AppendMenuSeparator();
+        menu.AppendMenuItem(MF_STRING, 5, '\u6253\u5f00\u8bf4\u660e');
         var result = menu.TrackPopupMenu(x, y);
         if (result === 1 || result === 2) {
             ns.Settings.setVolumeMode(result === 2 ? 'virtualWidth' : 'curve');
@@ -241,8 +243,17 @@
         } else if (result === 4) {
             if (virtualMode) ns.Settings.resetVolumeVirtualWidthK();
             else ns.Settings.resetVolumeCurveK();
+        } else if (result === 5) {
+            utils.MessageBox(
+                '\u66f2\u7ebf\u7cfb\u6570\u6a21\u5f0f\n' +
+                'k \u8d8a\u4f4e\uff0c\u7ea6 -40\uff5e-10 dB \u7684\u5e38\u7528\u4e2d\u4f4e\u97f3\u91cf\u533a\u95f4\u8d8a\u7cbe\u7ec6\u3002\n\n' +
+                '\u865a\u62df\u5bbd\u5ea6\u6a21\u5f0f\n' +
+                'k \u8d8a\u9ad8\uff0c\u4e2d\u95f4\u50cf\u7d20\u7684\u97f3\u91cf\u6b65\u8fdb\u8d8a\u7cbe\u7ec6\uff1b' +
+                '\u4f46\u6700\u540e\u4e00\u4e2a\u4e2d\u95f4\u50cf\u7d20\u5230 0 dB \u7684\u65ad\u5c42\u4e5f\u4f1a\u8d8a\u5927\u3002\n\n' +
+                '\u4e24\u79cd\u6a21\u5f0f\u7684 k \u90fd\u5fc5\u987b\u662f\u5927\u4e8e 0 \u7684\u6709\u9650\u6570\u5b57\u3002',
+                '\u97f3\u91cf\u6620\u5c04\u8bf4\u660e', MessageBoxButtons.Ok, MessageBoxIcon.Information);
         }
-        if (result) {
+        if (result && result !== 5) {
             window.RepaintRect(this.volumeControlRect.x, this.volumeControlRect.y,
                 this.volumeControlRect.w, this.volumeControlRect.h);
         }
