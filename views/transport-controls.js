@@ -169,7 +169,8 @@
     };
 
     TransportControls.prototype.volumePosition = function () {
-        return ns.VolumeMapping.toPosition(fb.Volume, ns.Settings.volumeCurveK);
+        return ns.VolumeMapping.toPosition(fb.Volume, ns.Settings.volumeMode,
+            ns.Settings.volumeCurveK, ns.Settings.volumeVirtualWidthK);
     };
 
     TransportControls.prototype.volumeText = function () {
@@ -204,30 +205,42 @@
         return true;
     };
 
-    TransportControls.prototype.showVolumeCurveMenu = function (x, y) {
+    TransportControls.prototype.showVolumeMappingMenu = function (x, y) {
         var menu = window.CreatePopupMenu();
-        var current = ns.VolumeMapping.formatK(ns.Settings.volumeCurveK);
-        menu.AppendMenuItem(MF_STRING, 1, '\u66f2\u7ebf\u7cfb\u6570 k\u2026\uff08\u5f53\u524d ' + current + '\uff09');
-        menu.AppendMenuItem(MF_STRING, 2, '\u91cd\u7f6e\u4e3a 0.5');
+        var virtualMode = ns.Settings.volumeMode === 'virtualWidth';
+        var currentK = virtualMode ? ns.Settings.volumeVirtualWidthK : ns.Settings.volumeCurveK;
+        var defaultK = virtualMode ? ns.VolumeMapping.defaultVirtualWidthK : ns.VolumeMapping.defaultCurveK;
+        var current = ns.VolumeMapping.formatK(currentK, defaultK);
+        menu.AppendMenuItem(MF_STRING, 1, '\u66f2\u7ebf\u7cfb\u6570\u6a21\u5f0f');
+        menu.AppendMenuItem(MF_STRING, 2, '\u865a\u62df\u5bbd\u5ea6\u6a21\u5f0f');
+        menu.CheckMenuRadioItem(1, 2, virtualMode ? 2 : 1);
+        menu.AppendMenuSeparator();
+        menu.AppendMenuItem(MF_STRING, 3,
+            (virtualMode ? '\u865a\u62df\u5bbd\u5ea6\u500d\u7387 k\u2026\uff08\u5f53\u524d ' :
+                '\u66f2\u7ebf\u7cfb\u6570 k\u2026\uff08\u5f53\u524d ') + current + '\uff09');
+        menu.AppendMenuItem(MF_STRING, 4, '\u91cd\u7f6e\u4e3a ' + ns.VolumeMapping.formatK(defaultK, defaultK));
         var result = menu.TrackPopupMenu(x, y);
-        if (result === 1) {
+        if (result === 1 || result === 2) {
+            ns.Settings.setVolumeMode(result === 2 ? 'virtualWidth' : 'curve');
+        } else if (result === 3) {
             var value;
             try {
                 value = utils.InputBox(0,
-                    '\u8bf7\u8f93\u5165 0.10 \u5230 10.00 \u4e4b\u95f4\u7684\u66f2\u7ebf\u7cfb\u6570 k\u3002\n' +
-                    '\u8f83\u5c0f\u7684 k \u4f1a\u7ed9\u4e2d\u4f4e\u97f3\u91cf\u533a\u95f4\u5206\u914d\u66f4\u591a\u62d6\u52a8\u8ddd\u79bb\u3002',
-                    '\u97f3\u91cf\u66f2\u7ebf\u7cfb\u6570', current, true);
+                    '\u8bf7\u8f93\u5165\u5927\u4e8e 0 \u7684\u6709\u9650\u6570\u5b57 k\u3002',
+                    virtualMode ? '\u865a\u62df\u5bbd\u5ea6\u500d\u7387' : '\u97f3\u91cf\u66f2\u7ebf\u7cfb\u6570', current, true);
             } catch (_) {
                 return true;
             }
-            var validation = ns.Settings.setVolumeCurveK(value);
+            var validation = virtualMode ? ns.Settings.setVolumeVirtualWidthK(value) :
+                ns.Settings.setVolumeCurveK(value);
             if (!validation.ok) {
                 utils.MessageBox('\u8bbe\u7f6e\u672a\u4fdd\u5b58\u3002\n\n' + validation.error,
-                    '\u65e0\u6548\u7684\u97f3\u91cf\u66f2\u7ebf\u7cfb\u6570', MessageBoxButtons.Ok, MessageBoxIcon.Error);
+                    '\u65e0\u6548\u7684\u97f3\u91cf\u6620\u5c04\u7cfb\u6570', MessageBoxButtons.Ok, MessageBoxIcon.Error);
                 return true;
             }
-        } else if (result === 2) {
-            ns.Settings.resetVolumeCurveK();
+        } else if (result === 4) {
+            if (virtualMode) ns.Settings.resetVolumeVirtualWidthK();
+            else ns.Settings.resetVolumeCurveK();
         }
         if (result) {
             window.RepaintRect(this.volumeControlRect.x, this.volumeControlRect.y,
@@ -237,7 +250,7 @@
     };
 
     TransportControls.prototype.context = function (x, y) {
-        if (ns.Util.inRect(x, y, this.volumeMenuRect)) return this.showVolumeCurveMenu(x, y);
+        if (ns.Util.inRect(x, y, this.volumeMenuRect)) return this.showVolumeMappingMenu(x, y);
         if (ns.Util.inRect(x, y, this.statusRect)) return this.showNowPlayingMenu(x, y);
         return false;
     };
@@ -324,7 +337,8 @@
 
     TransportControls.prototype.setVolumeFromX = function (x) {
         var ratio = ns.Util.clamp((x - this.volumeRect.x) / Math.max(1, this.volumeRect.w - 1), 0, 1);
-        fb.Volume = ns.VolumeMapping.toDb(ratio, ns.Settings.volumeCurveK);
+        fb.Volume = ns.VolumeMapping.toDb(ratio, ns.Settings.volumeMode,
+            ns.Settings.volumeCurveK, ns.Settings.volumeVirtualWidthK);
         window.RepaintRect(this.volumeControlRect.x, this.volumeControlRect.y,
             this.volumeControlRect.w, this.volumeControlRect.h);
     };

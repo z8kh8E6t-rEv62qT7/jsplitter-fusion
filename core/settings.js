@@ -50,12 +50,19 @@
         return defaultNowPlayingFormat;
     }
 
-    function readVolumeCurveK() {
-        var value = window.GetProperty(prefix + 'volume.curveK', '');
+    function readVolumeMode() {
+        var value = window.GetProperty(prefix + 'volume.mode', '');
+        var normalized = ns.VolumeMapping.normalizeMode(value);
+        if (String(value) !== normalized) set('volume.mode', normalized);
+        return normalized;
+    }
+
+    function readVolumeK(name, fallback) {
+        var value = window.GetProperty(prefix + name, '');
         var validation = ns.VolumeMapping.validateK(value);
         if (validation.ok) return validation.value;
-        set('volume.curveK', ns.VolumeMapping.defaultK);
-        return ns.VolumeMapping.defaultK;
+        set(name, fallback);
+        return fallback;
     }
 
     function readColumnOrder() {
@@ -105,7 +112,9 @@
         rightWidth: number('rightWidth', ns.Theme.s(320), ns.Theme.s(220), ns.Theme.s(640)),
         defaultNowPlayingFormat: defaultNowPlayingFormat,
         nowPlayingFormat: readNowPlayingFormat(),
-        volumeCurveK: readVolumeCurveK(),
+        volumeMode: readVolumeMode(),
+        volumeCurveK: readVolumeK('volume.curveK', ns.VolumeMapping.defaultCurveK),
+        volumeVirtualWidthK: readVolumeK('volume.virtualWidthK', ns.VolumeMapping.defaultVirtualWidthK),
         columnOrder: readColumnOrder(),
         columns: [
             number('column.index', ns.Theme.s(42), ns.Theme.s(28), ns.Theme.s(10000)),
@@ -137,6 +146,11 @@
             this.nowPlayingFormat = defaultNowPlayingFormat;
             set('nowPlaying.format', defaultNowPlayingFormat);
         },
+        setVolumeMode: function (value) {
+            this.volumeMode = ns.VolumeMapping.normalizeMode(value);
+            set('volume.mode', this.volumeMode);
+            return this.volumeMode;
+        },
         setVolumeCurveK: function (value) {
             var validation = ns.VolumeMapping.validateK(value);
             if (!validation.ok) return validation;
@@ -145,9 +159,21 @@
             return validation;
         },
         resetVolumeCurveK: function () {
-            this.volumeCurveK = ns.VolumeMapping.defaultK;
+            this.volumeCurveK = ns.VolumeMapping.defaultCurveK;
             set('volume.curveK', this.volumeCurveK);
             return this.volumeCurveK;
+        },
+        setVolumeVirtualWidthK: function (value) {
+            var validation = ns.VolumeMapping.validateK(value);
+            if (!validation.ok) return validation;
+            this.volumeVirtualWidthK = validation.value;
+            set('volume.virtualWidthK', this.volumeVirtualWidthK);
+            return validation;
+        },
+        resetVolumeVirtualWidthK: function () {
+            this.volumeVirtualWidthK = ns.VolumeMapping.defaultVirtualWidthK;
+            set('volume.virtualWidthK', this.volumeVirtualWidthK);
+            return this.volumeVirtualWidthK;
         },
         setColumn: function (index, value) {
             this.columns[index] = value;
