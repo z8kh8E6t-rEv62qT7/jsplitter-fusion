@@ -100,15 +100,42 @@ function settingsContext(initial) {
     const result = settingsContext({
         'jsplitterFusion.column.order': 'index,title,length,artist,album'
     });
-    assert.deepStrictEqual(Array.from(result.settings.columnOrder), [0, 1, 4, 2, 3, 5]);
+    assert.deepStrictEqual(Array.from(result.settings.columnOrder),
+        [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4]);
     assert.strictEqual(result.properties.get('jsplitterFusion.column.order'),
-        'index,title,length,artist,album,filename');
+        'index,title,artist,album,filename,codec,bitrate,samplerate,bitdepth,channels,filesize,length');
     assert.strictEqual(result.settings.columnVisible[5], false);
+    assert.strictEqual(result.settings.columnVisible[4], true);
+    assert.deepStrictEqual(Array.from(result.settings.columnVisible.slice(6)),
+        [false, false, false, false, false, false]);
+}
+
+{
+    const result = settingsContext({
+        'jsplitterFusion.column.order': 'index,title,artist,album,filename,length'
+    });
+    assert.deepStrictEqual(Array.from(result.settings.columnOrder),
+        [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4]);
+    assert.strictEqual(result.properties.get('jsplitterFusion.column.order'),
+        'index,title,artist,album,filename,codec,bitrate,samplerate,bitdepth,channels,filesize,length');
+}
+
+{
+    const result = settingsContext({
+        'jsplitterFusion.column.order':
+            'index,title,artist,album,filename,codec,bitrate,samplerate,bitdepth,channels,codec,length'
+    });
+    assert.deepStrictEqual(Array.from(result.settings.columnOrder),
+        [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4]);
+    assert.strictEqual(result.properties.get('jsplitterFusion.column.order'),
+        'index,title,artist,album,filename,codec,bitrate,samplerate,bitdepth,channels,filesize,length');
 }
 
 {
     const result = settingsContext();
-    assert.deepStrictEqual(Array.from(result.settings.columnOrder), [0, 1, 2, 3, 5, 4]);
+    assert.deepStrictEqual(Array.from(result.settings.columnOrder),
+        [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4]);
+    assert.strictEqual(result.settings.columnDefinitions.length, 12);
     assert.strictEqual(result.settings.nowPlayingFormat,
         '$if2(%title%,$if2(%filename_ext%,no title))');
     assert.strictEqual(result.settings.volumeMode, 'curve');
@@ -309,12 +336,21 @@ function handleList(handles, duration, size) {
     const handles = [{}, {}, {}, {}, {}];
     handles.Count = handles.length;
     const directories = ['A', 'A', 'B', 'A', 'A'];
+    const metadata = {
+        '[%codec_long%]': ['FLAC', 'AAC', '', '', ''],
+        '[%bitrate%]': ['1000', '256', '', '', ''],
+        '[%samplerate%]': ['44100', '48000', '', '', ''],
+        '[%bitspersample%]': ['', '24', '', '', ''],
+        '[%decoded_bitspersample%]': ['16', '32', '', '', ''],
+        '[%channels%]': ['stereo', 'stereo', '', '', ''],
+        '[%filesize_natural%]': ['1 MB', '2 MB', '', '', '']
+    };
     const context = {
         FusionUI: {},
         fb: {
             TitleFormat: expression => ({
                 EvalWithMetadbs: () => expression.indexOf('$info(CUE_SOURCE_PATH)') >= 0 ?
-                    directories : ['', '', '', '', '']
+                    directories : (metadata[expression] || ['', '', '', '', ''])
             })
         },
         plman: {
@@ -328,6 +364,14 @@ function handleList(handles, duration, size) {
     run('core/utils.js', context);
     run('core/playlist-model.js', context);
     const model = new context.FusionUI.PlaylistModel();
+    assert.strictEqual(model.meta[0].codec, 'FLAC');
+    assert.strictEqual(model.meta[0].bitrate, '1000 kbps');
+    assert.strictEqual(model.meta[0].samplerate, '44100 Hz');
+    assert.strictEqual(model.meta[0].bitdepth, '16 bit');
+    assert.strictEqual(model.meta[0].channels, 'stereo');
+    assert.strictEqual(model.meta[0].filesize, '1 MB');
+    assert.strictEqual(model.meta[1].bitdepth, '24 bit');
+    assert.strictEqual(model.meta[2].bitrate, 'No data');
     const groups = model.rows.filter(row => row.type === 'group');
     assert.deepStrictEqual(Array.from(groups, group =>
         [group.directory, group.firstItem, group.itemCount]), [
@@ -885,8 +929,17 @@ function handleList(handles, duration, size) {
 }
 
 const playlistSource = fs.readFileSync(path.join(sourceRoot, 'views/playlist-view.js'), 'utf8');
-assert(playlistSource.includes("'Filename'"));
-assert(playlistSource.includes('columnIndex === 5'));
+assert(playlistSource.includes('columnDefinitions'));
+assert(playlistSource.includes('definition.key'));
+
+const columnSettingsSource = fs.readFileSync(path.join(sourceRoot, 'core/settings.js'), 'utf8');
+for (const name of ['Filename', 'Codec', 'Bitrate', 'Sample rate', 'Bit depth', 'Channels', 'File size']) {
+    assert(columnSettingsSource.includes(`name: '${name}'`));
+}
+for (const id of ['codec', 'bitrate', 'samplerate', 'bitdepth', 'channels', 'filesize']) {
+    const definition = columnSettingsSource.match(new RegExp("\\{ id: '" + id + "'[^\\n]+"));
+    assert(definition && definition[0].includes('visible: false'));
+}
 
 const mainSource = fs.readFileSync(path.join(sourceRoot, 'main.js'), 'utf8');
 assert(mainSource.includes('include(relativePath);'));

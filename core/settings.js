@@ -2,9 +2,22 @@
     'use strict';
 
     var prefix = 'jsplitterFusion.';
-    var columnIds = ['index', 'title', 'artist', 'album', 'length', 'filename'];
-    var legacyColumnIds = ['index', 'title', 'artist', 'album', 'length'];
-    var defaultColumnOrder = [0, 1, 2, 3, 5, 4];
+    var columnDefinitions = [
+        { id: 'index', name: '#', key: '', width: 42, minWidth: 28, visible: true, alwaysVisible: false, centered: true },
+        { id: 'title', name: 'Title', key: 'title', width: 260, minWidth: 64, visible: true, alwaysVisible: true, centered: false },
+        { id: 'artist', name: 'Artist', key: 'artist', width: 150, minWidth: 64, visible: true, alwaysVisible: false, centered: false },
+        { id: 'album', name: 'Album', key: 'album', width: 190, minWidth: 64, visible: true, alwaysVisible: false, centered: false },
+        { id: 'length', name: 'Length', key: 'length', width: 70, minWidth: 44, visible: true, alwaysVisible: false, centered: true },
+        { id: 'filename', name: 'Filename', key: 'filename', width: 160, minWidth: 64, visible: false, alwaysVisible: false, centered: false },
+        { id: 'codec', name: 'Codec', key: 'codec', width: 120, minWidth: 64, visible: false, alwaysVisible: false, centered: false },
+        { id: 'bitrate', name: 'Bitrate', key: 'bitrate', width: 100, minWidth: 64, visible: false, alwaysVisible: false, centered: false },
+        { id: 'samplerate', name: 'Sample rate', key: 'samplerate', width: 110, minWidth: 64, visible: false, alwaysVisible: false, centered: false },
+        { id: 'bitdepth', name: 'Bit depth', key: 'bitdepth', width: 90, minWidth: 64, visible: false, alwaysVisible: false, centered: false },
+        { id: 'channels', name: 'Channels', key: 'channels', width: 90, minWidth: 64, visible: false, alwaysVisible: false, centered: false },
+        { id: 'filesize', name: 'File size', key: 'filesize', width: 110, minWidth: 64, visible: false, alwaysVisible: false, centered: false }
+    ];
+    var columnIds = columnDefinitions.map(function (column) { return column.id; });
+    var defaultColumnOrder = [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4];
     var defaultNowPlayingFormat = '$if2(%title%,$if2(%filename_ext%,no title))';
 
     function number(name, fallback, min, max) {
@@ -15,6 +28,18 @@
 
     function set(name, value) {
         window.SetProperty(prefix + name, value);
+    }
+
+    function saveColumnOrder(order) {
+        var ids = [];
+        for (var i = 0; i < order.length; ++i) ids.push(columnIds[order[i]]);
+        set('column.order', ids.join(','));
+    }
+
+    function resetColumnOrder() {
+        var order = defaultColumnOrder.slice(0);
+        saveColumnOrder(order);
+        return order;
     }
 
     function boolean(name, fallback) {
@@ -68,31 +93,17 @@
     function readColumnOrder() {
         var raw = String(window.GetProperty(prefix + 'column.order', ''));
         var parts = raw.split(',');
-        var migrated = false;
-        if (parts.length === legacyColumnIds.length) {
-            var legacySeen = {};
-            for (var legacyIndex = 0; legacyIndex < parts.length; ++legacyIndex) {
-                var legacyId = parts[legacyIndex].trim();
-                if (legacyColumnIds.indexOf(legacyId) < 0 || legacySeen[legacyId]) return defaultColumnOrder.slice(0);
-                legacySeen[legacyId] = true;
-                parts[legacyIndex] = legacyId;
-            }
-            if (parts[0] !== 'index' || parts[1] !== 'title') return defaultColumnOrder.slice(0);
-            parts.splice(parts.indexOf('album') + 1, 0, 'filename');
-            migrated = true;
-        }
+        if (parts.length !== columnIds.length) return resetColumnOrder();
         var seen = {};
-        if (parts.length !== columnIds.length) return defaultColumnOrder.slice(0);
         var order = [];
         for (var i = 0; i < parts.length; ++i) {
             var id = parts[i].trim();
             var index = columnIds.indexOf(id);
-            if (index < 0 || seen[id]) return defaultColumnOrder.slice(0);
+            if (index < 0 || seen[id]) return resetColumnOrder();
             seen[id] = true;
             order.push(index);
         }
-        if (!validColumnOrder(order)) return defaultColumnOrder.slice(0);
-        if (migrated) set('column.order', parts.join(','));
+        if (!validColumnOrder(order)) return resetColumnOrder();
         return order;
     }
 
@@ -107,6 +118,16 @@
         return true;
     }
 
+    var columnWidths = [];
+    var columnVisible = [];
+    for (var columnIndex = 0; columnIndex < columnDefinitions.length; ++columnIndex) {
+        var definition = columnDefinitions[columnIndex];
+        columnWidths.push(number('column.' + definition.id, ns.Theme.s(definition.width),
+            ns.Theme.s(definition.minWidth), ns.Theme.s(10000)));
+        columnVisible.push(definition.alwaysVisible ? true :
+            boolean('column.visible.' + definition.id, definition.visible));
+    }
+
     ns.Settings = {
         leftWidth: number('leftWidth', ns.Theme.s(220), ns.Theme.s(150), ns.Theme.s(480)),
         rightWidth: number('rightWidth', ns.Theme.s(320), ns.Theme.s(220), ns.Theme.s(640)),
@@ -115,23 +136,10 @@
         volumeMode: readVolumeMode(),
         volumeCurveK: readVolumeK('volume.curveK', ns.VolumeMapping.defaultCurveK),
         volumeVirtualWidthK: readVolumeK('volume.virtualWidthK', ns.VolumeMapping.defaultVirtualWidthK),
+        columnDefinitions: columnDefinitions,
         columnOrder: readColumnOrder(),
-        columns: [
-            number('column.index', ns.Theme.s(42), ns.Theme.s(28), ns.Theme.s(10000)),
-            number('column.title', ns.Theme.s(260), ns.Theme.s(64), ns.Theme.s(10000)),
-            number('column.artist', ns.Theme.s(150), ns.Theme.s(64), ns.Theme.s(10000)),
-            number('column.album', ns.Theme.s(190), ns.Theme.s(64), ns.Theme.s(10000)),
-            number('column.length', ns.Theme.s(70), ns.Theme.s(44), ns.Theme.s(10000)),
-            number('column.filename', ns.Theme.s(160), ns.Theme.s(64), ns.Theme.s(10000))
-        ],
-        columnVisible: [
-            boolean('column.visible.index', true),
-            true,
-            boolean('column.visible.artist', true),
-            boolean('column.visible.album', true),
-            boolean('column.visible.length', true),
-            boolean('column.visible.filename', false)
-        ],
+        columns: columnWidths,
+        columnVisible: columnVisible,
         setLeftWidth: function (value) { this.leftWidth = value; set('leftWidth', value); },
         setRightWidth: function (value) { this.rightWidth = value; set('rightWidth', value); },
         validateNowPlayingFormat: validateNowPlayingFormat,
@@ -180,16 +188,14 @@
             set('column.' + columnIds[index], value);
         },
         setColumnVisible: function (index, value) {
-            if (index === 1) value = true;
+            if (columnDefinitions[index] && columnDefinitions[index].alwaysVisible) value = true;
             this.columnVisible[index] = !!value;
             set('column.visible.' + columnIds[index], this.columnVisible[index]);
         },
         setColumnOrder: function (order) {
             if (!validColumnOrder(order)) return false;
             this.columnOrder = order.slice(0);
-            var ids = [];
-            for (var i = 0; i < order.length; ++i) ids.push(columnIds[order[i]]);
-            set('column.order', ids.join(','));
+            saveColumnOrder(order);
             return true;
         },
         scrollKey: function (playlistIndex) {

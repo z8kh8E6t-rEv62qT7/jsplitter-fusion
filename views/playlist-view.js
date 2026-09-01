@@ -1,8 +1,6 @@
 (function (ns) {
     'use strict';
 
-    var COLUMN_NAMES = ['#', 'Title', 'Artist', 'Album', 'Length', 'Filename'];
-
     function PlaylistView(model) {
         this.model = model;
         this.rect = null;
@@ -54,9 +52,8 @@
     }
 
     PlaylistView.prototype.minimumWidth = function (index) {
-        if (index === 0) return ns.Theme.s(28);
-        if (index === 4) return ns.Theme.s(44);
-        return ns.Theme.s(64);
+        var definition = ns.Settings.columnDefinitions[index];
+        return ns.Theme.s(definition ? definition.minWidth : 64);
     };
 
     PlaylistView.prototype.reloadScroll = function () {
@@ -76,7 +73,7 @@
             var width = Math.max(this.minimumWidth(i), this.columns[i]);
             var column = {
                 index: i,
-                name: COLUMN_NAMES[i],
+                name: ns.Settings.columnDefinitions[i].name,
                 x: baseX + this.contentWidth,
                 width: width
             };
@@ -143,12 +140,13 @@
     PlaylistView.prototype.columnValue = function (columnIndex, itemIndex) {
         var meta = this.model.meta[itemIndex] || {};
         if (columnIndex === 0) return String(itemIndex + 1);
-        if (columnIndex === 1) return meta.title || 'No data';
-        if (columnIndex === 2) return meta.artist || 'No data';
-        if (columnIndex === 3) return meta.album || 'No data';
-        if (columnIndex === 4) return meta.length || 'No data';
-        if (columnIndex === 5) return meta.filename || 'No data';
-        return 'No data';
+        var definition = ns.Settings.columnDefinitions[columnIndex];
+        return definition && meta[definition.key] ? meta[definition.key] : 'No data';
+    };
+
+    PlaylistView.prototype.columnCentered = function (columnIndex) {
+        var definition = ns.Settings.columnDefinitions[columnIndex];
+        return !!(definition && definition.centered);
     };
 
     PlaylistView.prototype.drawHeader = function (gr) {
@@ -161,7 +159,7 @@
             if (column.x + column.width <= this.rect.x || column.x >= this.rect.x + this.viewportWidth) continue;
             var cell = { x: column.x, y: this.rect.y, w: column.width, h: m.header };
             ns.Util.drawRaised(gr, cell);
-            var align = column.index === 0 || column.index === 4 ? DT_CENTER : DT_LEFT;
+            var align = this.columnCentered(column.index) ? DT_CENTER : DT_LEFT;
             ns.Util.drawText(gr, column.name, f.normal, p.text,
                 { x: cell.x + m.padding, y: cell.y, w: Math.max(0, cell.w - m.padding * 2), h: cell.h },
                 align | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
@@ -220,7 +218,7 @@
             for (var c = 0; c < this.visibleColumns.length; ++c) {
                 var column = this.visibleColumns[c];
                 if (column.x + column.width <= this.contentRect.x || column.x >= this.contentRect.x + this.contentRect.w) continue;
-                var align = column.index === 0 || column.index === 4 ? DT_CENTER : DT_LEFT;
+                var align = this.columnCentered(column.index) ? DT_CENTER : DT_LEFT;
                 ns.Util.drawText(gr, this.columnValue(column.index, itemIndex), playing ? f.bold : f.normal, textColour,
                     { x: column.x + m.padding, y: y, w: Math.max(0, column.width - m.padding * 2), h: m.row },
                     align | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
@@ -468,7 +466,8 @@
 
     PlaylistView.prototype.measureColumn = function (index, gr) {
         var m = ns.Theme.metrics;
-        var width = gr.CalcTextWidth(COLUMN_NAMES[index], ns.Theme.fonts.normal, true) + m.padding * 2;
+        var width = gr.CalcTextWidth(ns.Settings.columnDefinitions[index].name,
+            ns.Theme.fonts.normal, true) + m.padding * 2;
         for (var row = 0; row < this.visible; ++row) {
             var visualIndex = this.first + row;
             if (visualIndex >= this.model.rows.length) break;
@@ -500,23 +499,24 @@
         menu.AppendMenuItem(clicked >= 0 ? MF_STRING : MF_GRAYED, 1, '\u81ea\u52a8\u8c03\u6574\u6b64\u5217');
         menu.AppendMenuItem(MF_STRING, 2, '\u81ea\u52a8\u8c03\u6574\u6240\u6709\u5217');
         menu.AppendMenuSeparator();
-        for (var i = 0; i < COLUMN_NAMES.length; ++i) {
+        var definitions = ns.Settings.columnDefinitions;
+        for (var i = 0; i < definitions.length; ++i) {
             var id = 100 + i;
-            menu.AppendMenuItem(i === 1 ? MF_GRAYED : MF_STRING, id, COLUMN_NAMES[i]);
-            menu.CheckMenuItem(id, i === 1 || ns.Settings.columnVisible[i]);
+            menu.AppendMenuItem(definitions[i].alwaysVisible ? MF_GRAYED : MF_STRING, id, definitions[i].name);
+            menu.CheckMenuItem(id, definitions[i].alwaysVisible || ns.Settings.columnVisible[i]);
         }
         var result = menu.TrackPopupMenu(x, y);
         if (result === 1 && clicked >= 0) {
             this.autoFitColumns([clicked]);
         } else if (result === 2) {
             var visible = [];
-            for (var c = 0; c < COLUMN_NAMES.length; ++c) {
+            for (var c = 0; c < definitions.length; ++c) {
                 if (ns.Settings.columnVisible[c]) visible.push(c);
             }
             this.autoFitColumns(visible);
-        } else if (result >= 100 && result < 100 + COLUMN_NAMES.length) {
+        } else if (result >= 100 && result < 100 + definitions.length) {
             var index = result - 100;
-            if (index !== 1) {
+            if (!definitions[index].alwaysVisible) {
                 ns.Settings.setColumnVisible(index, !ns.Settings.columnVisible[index]);
                 this.layout(this.rect);
                 window.Repaint();

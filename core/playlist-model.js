@@ -4,6 +4,15 @@
     var MISSING = 'No data';
     var NOT_APPLICABLE = 'N/A';
 
+    function rawText(value) {
+        return value == null ? '' : String(value).trim();
+    }
+
+    function withUnit(value, unit) {
+        value = rawText(value);
+        return value ? value + ' ' + unit : MISSING;
+    }
+
     function PlaylistModel() {
         this.tf = {
             directory: fb.TitleFormat('$if($info(CUE_SOURCE_PATH),$directory($info(CUE_SOURCE_PATH)),$if2(%directoryname%,\u672a\u77e5\u76ee\u5f55))'),
@@ -79,17 +88,39 @@
         var albums = count ? this.tf.album.EvalWithMetadbs(this.handles) : [];
         var lengths = count ? this.tf.length.EvalWithMetadbs(this.handles) : [];
         var filenames = count ? this.tf.filename.EvalWithMetadbs(this.handles) : [];
+        var codecs = count ? this.tf.codec.EvalWithMetadbs(this.handles) : [];
+        var bitrates = count ? this.tf.bitrate.EvalWithMetadbs(this.handles) : [];
+        var samplerates = count ? this.tf.samplerate.EvalWithMetadbs(this.handles) : [];
+        var storedBitdepths = count ? this.tf.storedBitdepth.EvalWithMetadbs(this.handles) : [];
+        var decodedBitdepths = count ? this.tf.decodedBitdepth.EvalWithMetadbs(this.handles) : [];
+        var channels = count ? this.tf.channels.EvalWithMetadbs(this.handles) : [];
+        var filesizes = count ? this.tf.filesize.EvalWithMetadbs(this.handles) : [];
         var previousDirectory = null;
         var currentGroup = null;
         for (var i = 0; i < count; ++i) {
             var directory = ns.Util.safeText(directories[i]);
+            var technical = this.technicalMeta(this.handles[i], {
+                codec: codecs[i],
+                bitrate: bitrates[i],
+                samplerate: samplerates[i],
+                storedBitdepth: storedBitdepths[i],
+                decodedBitdepth: decodedBitdepths[i],
+                channels: channels[i],
+                filesize: filesizes[i]
+            });
             this.meta.push({
                 directory: directory,
                 title: ns.Util.safeText(titles[i]),
                 artist: ns.Util.safeText(artists[i]),
                 album: ns.Util.safeText(albums[i]),
                 length: ns.Util.safeText(lengths[i]),
-                filename: ns.Util.safeText(filenames[i])
+                filename: ns.Util.safeText(filenames[i]),
+                codec: technical.codec,
+                bitrate: technical.bitrate,
+                samplerate: technical.samplerate,
+                bitdepth: technical.bitdepth,
+                channels: technical.channels,
+                filesize: technical.filesize
             });
             if (directory !== previousDirectory) {
                 currentGroup = { type: 'group', directory: directory, firstItem: i, itemCount: 0 };
@@ -214,6 +245,20 @@
         }
     };
 
+    PlaylistModel.prototype.technicalMeta = function (handle, values) {
+        values = values || {};
+        var bitdepth = rawText(values.storedBitdepth) || this.fileInfoValue(handle, 'bitspersample') ||
+            rawText(values.decodedBitdepth);
+        return {
+            codec: ns.Util.safeText(values.codec),
+            bitrate: withUnit(values.bitrate, 'kbps'),
+            samplerate: withUnit(values.samplerate, 'Hz'),
+            bitdepth: withUnit(bitdepth, 'bit'),
+            channels: ns.Util.safeText(values.channels),
+            filesize: ns.Util.safeText(values.filesize)
+        };
+    };
+
     PlaylistModel.prototype.details = function (handle) {
         if (!handle) return null;
         var missing = MISSING;
@@ -226,10 +271,15 @@
             if (!total) return current || missing;
             return (current || missing) + ' / ' + total;
         };
-        var bitrate = raw(this.tf.bitrate);
-        var samplerate = raw(this.tf.samplerate);
-        var bitdepth = raw(this.tf.storedBitdepth) || this.fileInfoValue(handle, 'bitspersample') ||
-            raw(this.tf.decodedBitdepth);
+        var technical = this.technicalMeta(handle, {
+            codec: ns.Util.eval(this.tf.codec, handle),
+            bitrate: ns.Util.eval(this.tf.bitrate, handle),
+            samplerate: ns.Util.eval(this.tf.samplerate, handle),
+            storedBitdepth: ns.Util.eval(this.tf.storedBitdepth, handle),
+            decodedBitdepth: ns.Util.eval(this.tf.decodedBitdepth, handle),
+            channels: ns.Util.eval(this.tf.channels, handle),
+            filesize: ns.Util.eval(this.tf.filesize, handle)
+        });
         var rawPath = String(handle.RawPath || handle.Path || '');
         var isRemote = /^(?:https?|mms|rtsp|icy):\/\//i.test(rawPath);
         return {
@@ -243,13 +293,13 @@
             genre: evalField(this.tf.genre),
             composer: evalField(this.tf.composer),
             comment: evalField(this.tf.comment),
-            codec: evalField(this.tf.codec),
-            bitrate: bitrate ? bitrate + ' kbps' : missing,
-            samplerate: samplerate ? samplerate + ' Hz' : missing,
-            bitdepth: bitdepth ? bitdepth + ' bit' : missing,
-            channels: evalField(this.tf.channels),
+            codec: technical.codec,
+            bitrate: technical.bitrate,
+            samplerate: technical.samplerate,
+            bitdepth: technical.bitdepth,
+            channels: technical.channels,
             length: ns.Util.safeText(ns.Util.eval(this.tf.length, handle)),
-            filesize: evalField(this.tf.filesize),
+            filesize: technical.filesize,
             replaygainTrackGain: evalField(this.tf.replaygainTrackGain),
             replaygainTrackPeak: evalField(this.tf.replaygainTrackPeak),
             replaygainAlbumGain: evalField(this.tf.replaygainAlbumGain),

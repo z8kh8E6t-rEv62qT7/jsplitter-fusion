@@ -54,8 +54,8 @@ JSplitter 必须作为 Columns UI 面板运行。`main.js` 还会加载 JSplitte
 - 双击或按 `Enter` 播放，按 `Delete` 删除选中项目。
 - 可从资源管理器拖入文件或文件夹，也可在列表内部拖动重排。
 - 拖动表头分隔线调整绝对列宽；拖动表头主体调整列顺序。
-- `#` 和 `Title` 固定在前两列；`Artist`、`Album`、`Filename`、`Length` 可换序。
-- 表头右键可自动调整单列或全部列，并控制可选列的显示状态。`Filename` 默认隐藏。
+- `#` 和 `Title` 固定在前两列；其余列均可换序。
+- 表头右键可自动调整单列或全部列，并控制可选列的显示状态。`Filename` 默认隐藏；`Codec`、`Bitrate`、`Sample rate`、`Bit depth`、`Channels` 和 `File size` 六个技术列也默认隐藏，并使用与 Item details 相同的值格式。
 - 普通滚轮纵向滚动；`Shift` + 滚轮横向滚动。列宽超出可视区域时会出现横向滚动条。
 - 在面板内单按 `O` 执行 foobar2000 的 `File/Add files...`，不会注册全局快捷键。
 
