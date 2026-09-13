@@ -136,6 +136,9 @@
         volumeMode: readVolumeMode(),
         volumeCurveK: readVolumeK('volume.curveK', ns.VolumeMapping.defaultCurveK),
         volumeVirtualWidthK: readVolumeK('volume.virtualWidthK', ns.VolumeMapping.defaultVirtualWidthK),
+        volumeHybridCurveK: readVolumeK('volume.hybridCurveK', ns.VolumeMapping.defaultHybridCurveK),
+        volumeHybridVirtualWidthK: readVolumeK('volume.hybridVirtualWidthK',
+            ns.VolumeMapping.defaultHybridVirtualWidthK),
         columnDefinitions: columnDefinitions,
         columnOrder: readColumnOrder(),
         columns: columnWidths,
@@ -182,6 +185,30 @@
             this.volumeVirtualWidthK = ns.VolumeMapping.defaultVirtualWidthK;
             set('volume.virtualWidthK', this.volumeVirtualWidthK);
             return this.volumeVirtualWidthK;
+        },
+        setVolumeHybridCurveK: function (value) {
+            var validation = ns.VolumeMapping.validateK(value);
+            if (!validation.ok) return validation;
+            this.volumeHybridCurveK = validation.value;
+            set('volume.hybridCurveK', this.volumeHybridCurveK);
+            return validation;
+        },
+        resetVolumeHybridCurveK: function () {
+            this.volumeHybridCurveK = ns.VolumeMapping.defaultHybridCurveK;
+            set('volume.hybridCurveK', this.volumeHybridCurveK);
+            return this.volumeHybridCurveK;
+        },
+        setVolumeHybridVirtualWidthK: function (value) {
+            var validation = ns.VolumeMapping.validateK(value);
+            if (!validation.ok) return validation;
+            this.volumeHybridVirtualWidthK = validation.value;
+            set('volume.hybridVirtualWidthK', this.volumeHybridVirtualWidthK);
+            return validation;
+        },
+        resetVolumeHybridVirtualWidthK: function () {
+            this.volumeHybridVirtualWidthK = ns.VolumeMapping.defaultHybridVirtualWidthK;
+            set('volume.hybridVirtualWidthK', this.volumeHybridVirtualWidthK);
+            return this.volumeHybridVirtualWidthK;
         },
         setColumn: function (index, value) {
             this.columns[index] = value;

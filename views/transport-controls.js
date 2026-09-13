@@ -170,7 +170,8 @@
 
     TransportControls.prototype.volumePosition = function () {
         return ns.VolumeMapping.toPosition(fb.Volume, ns.Settings.volumeMode,
-            ns.Settings.volumeCurveK, ns.Settings.volumeVirtualWidthK);
+            ns.Settings.volumeCurveK, ns.Settings.volumeVirtualWidthK,
+            ns.Settings.volumeHybridCurveK, ns.Settings.volumeHybridVirtualWidthK);
     };
 
     TransportControls.prototype.volumeText = function () {
@@ -205,55 +206,110 @@
         return true;
     };
 
+    TransportControls.prototype.volumeMappingFields = function () {
+        var settings = ns.Settings;
+        var mapping = ns.VolumeMapping;
+        if (settings.volumeMode === 'virtualWidth') {
+            return [{
+                label: '\u865a\u62df\u5bbd\u5ea6\u500d\u7387 k',
+                title: '\u865a\u62df\u5bbd\u5ea6\u500d\u7387',
+                value: settings.volumeVirtualWidthK,
+                defaultValue: mapping.defaultVirtualWidthK,
+                set: function (value) { return settings.setVolumeVirtualWidthK(value); },
+                reset: function () { return settings.resetVolumeVirtualWidthK(); }
+            }];
+        }
+        if (settings.volumeMode === 'hybrid') {
+            return [{
+                label: '\u6df7\u5408\u66f2\u7ebf\u7cfb\u6570 k',
+                title: '\u6df7\u5408\u66f2\u7ebf\u7cfb\u6570',
+                value: settings.volumeHybridCurveK,
+                defaultValue: mapping.defaultHybridCurveK,
+                set: function (value) { return settings.setVolumeHybridCurveK(value); },
+                reset: function () { return settings.resetVolumeHybridCurveK(); }
+            }, {
+                label: '\u6df7\u5408\u865a\u62df\u5bbd\u5ea6\u500d\u7387 k',
+                title: '\u6df7\u5408\u865a\u62df\u5bbd\u5ea6\u500d\u7387',
+                value: settings.volumeHybridVirtualWidthK,
+                defaultValue: mapping.defaultHybridVirtualWidthK,
+                set: function (value) { return settings.setVolumeHybridVirtualWidthK(value); },
+                reset: function () { return settings.resetVolumeHybridVirtualWidthK(); }
+            }];
+        }
+        return [{
+            label: '\u66f2\u7ebf\u7cfb\u6570 k',
+            title: '\u97f3\u91cf\u66f2\u7ebf\u7cfb\u6570',
+            value: settings.volumeCurveK,
+            defaultValue: mapping.defaultCurveK,
+            set: function (value) { return settings.setVolumeCurveK(value); },
+            reset: function () { return settings.resetVolumeCurveK(); }
+        }];
+    };
+
     TransportControls.prototype.showVolumeMappingMenu = function (x, y) {
+        var EDIT_BASE = 10;
+        var HELP_ID = 100;
+        var modeNames = ['curve', 'virtualWidth', 'hybrid'];
         var menu = window.CreatePopupMenu();
-        var virtualMode = ns.Settings.volumeMode === 'virtualWidth';
-        var currentK = virtualMode ? ns.Settings.volumeVirtualWidthK : ns.Settings.volumeCurveK;
-        var defaultK = virtualMode ? ns.VolumeMapping.defaultVirtualWidthK : ns.VolumeMapping.defaultCurveK;
-        var current = ns.VolumeMapping.formatK(currentK, defaultK);
+        var selectedMode = modeNames.indexOf(ns.Settings.volumeMode);
+        var fields = this.volumeMappingFields();
         menu.AppendMenuItem(MF_STRING, 1, '\u66f2\u7ebf\u7cfb\u6570\u6a21\u5f0f');
         menu.AppendMenuItem(MF_STRING, 2, '\u865a\u62df\u5bbd\u5ea6\u6a21\u5f0f');
-        menu.CheckMenuRadioItem(1, 2, virtualMode ? 2 : 1);
+        menu.AppendMenuItem(MF_STRING, 3, '\u6df7\u5408\u6a21\u5f0f');
+        menu.CheckMenuRadioItem(1, 3, Math.max(0, selectedMode) + 1);
         menu.AppendMenuSeparator();
-        menu.AppendMenuItem(MF_STRING, 3,
-            (virtualMode ? '\u865a\u62df\u5bbd\u5ea6\u500d\u7387 k\u2026\uff08\u5f53\u524d ' :
-                '\u66f2\u7ebf\u7cfb\u6570 k\u2026\uff08\u5f53\u524d ') + current + '\uff09');
-        menu.AppendMenuItem(MF_STRING, 4, '\u91cd\u7f6e\u4e3a ' + ns.VolumeMapping.formatK(defaultK, defaultK));
+        for (var i = 0; i < fields.length; ++i) {
+            var current = ns.VolumeMapping.formatK(fields[i].value, fields[i].defaultValue);
+            var fallback = ns.VolumeMapping.formatK(fields[i].defaultValue, fields[i].defaultValue);
+            menu.AppendMenuItem(MF_STRING, EDIT_BASE + i * 2,
+                fields[i].label + '\u2026\uff08\u5f53\u524d ' + current + '\uff09');
+            menu.AppendMenuItem(MF_STRING, EDIT_BASE + i * 2 + 1, '\u91cd\u7f6e\u4e3a ' + fallback);
+        }
         menu.AppendMenuSeparator();
-        menu.AppendMenuItem(MF_STRING, 5, '\u6253\u5f00\u8bf4\u660e');
+        menu.AppendMenuItem(MF_STRING, HELP_ID, '\u6253\u5f00\u8bf4\u660e');
         var result = menu.TrackPopupMenu(x, y);
-        if (result === 1 || result === 2) {
-            ns.Settings.setVolumeMode(result === 2 ? 'virtualWidth' : 'curve');
-        } else if (result === 3) {
-            var value;
-            try {
-                value = utils.InputBox(0,
-                    '\u8bf7\u8f93\u5165\u5927\u4e8e 0 \u7684\u6709\u9650\u6570\u5b57 k\u3002',
-                    virtualMode ? '\u865a\u62df\u5bbd\u5ea6\u500d\u7387' : '\u97f3\u91cf\u66f2\u7ebf\u7cfb\u6570', current, true);
-            } catch (_) {
-                return true;
-            }
-            var validation = virtualMode ? ns.Settings.setVolumeVirtualWidthK(value) :
-                ns.Settings.setVolumeCurveK(value);
-            if (!validation.ok) {
-                utils.MessageBox('\u8bbe\u7f6e\u672a\u4fdd\u5b58\u3002\n\n' + validation.error,
-                    '\u65e0\u6548\u7684\u97f3\u91cf\u6620\u5c04\u7cfb\u6570', MessageBoxButtons.Ok, MessageBoxIcon.Error);
-                return true;
-            }
-        } else if (result === 4) {
-            if (virtualMode) ns.Settings.resetVolumeVirtualWidthK();
-            else ns.Settings.resetVolumeCurveK();
-        } else if (result === 5) {
+        if (result >= 1 && result <= modeNames.length) {
+            ns.Settings.setVolumeMode(modeNames[result - 1]);
+        } else if (result === HELP_ID) {
             utils.MessageBox(
                 '\u66f2\u7ebf\u7cfb\u6570\u6a21\u5f0f\n' +
                 'k \u8d8a\u4f4e\uff0c\u7ea6 -40\uff5e-10 dB \u7684\u5e38\u7528\u4e2d\u4f4e\u97f3\u91cf\u533a\u95f4\u8d8a\u7cbe\u7ec6\u3002\n\n' +
                 '\u865a\u62df\u5bbd\u5ea6\u6a21\u5f0f\n' +
                 'k \u8d8a\u9ad8\uff0c\u4e2d\u95f4\u50cf\u7d20\u7684\u97f3\u91cf\u6b65\u8fdb\u8d8a\u7cbe\u7ec6\uff1b' +
                 '\u4f46\u6700\u540e\u4e00\u4e2a\u4e2d\u95f4\u50cf\u7d20\u5230 0 dB \u7684\u65ad\u5c42\u4e5f\u4f1a\u8d8a\u5927\u3002\n\n' +
-                '\u4e24\u79cd\u6a21\u5f0f\u7684 k \u90fd\u5fc5\u987b\u662f\u5927\u4e8e 0 \u7684\u6709\u9650\u6570\u5b57\u3002',
+                '\u6df7\u5408\u6a21\u5f0f\n' +
+                'position = 10^((dB \u00d7 curve k) / 20) \u00d7 virtual width k\n' +
+                '\u66f2\u7ebf k \u8d8a\u4f4e\uff0c\u5e38\u7528\u4e2d\u4f4e\u97f3\u91cf\u533a\u95f4\u8d8a\u7cbe\u7ec6\uff1b' +
+                '\u865a\u62df\u5bbd\u5ea6 k \u8d8a\u9ad8\uff0c\u4e2d\u95f4\u50cf\u7d20\u6b65\u8fdb\u8d8a\u7cbe\u7ec6\uff0c\u7aef\u70b9\u65ad\u5c42\u4e5f\u8d8a\u5927\u3002\n\n' +
+                '\u4e09\u79cd\u6a21\u5f0f\u7684 k \u90fd\u5fc5\u987b\u662f\u5927\u4e8e 0 \u7684\u6709\u9650\u6570\u5b57\u3002',
                 '\u97f3\u91cf\u6620\u5c04\u8bf4\u660e', MessageBoxButtons.Ok, MessageBoxIcon.Information);
+        } else {
+            for (var fieldIndex = 0; fieldIndex < fields.length; ++fieldIndex) {
+                var editId = EDIT_BASE + fieldIndex * 2;
+                if (result === editId) {
+                    var value;
+                    try {
+                        value = utils.InputBox(0,
+                            '\u8bf7\u8f93\u5165\u5927\u4e8e 0 \u7684\u6709\u9650\u6570\u5b57 k\u3002',
+                            fields[fieldIndex].title,
+                            ns.VolumeMapping.formatK(fields[fieldIndex].value,
+                                fields[fieldIndex].defaultValue), true);
+                    } catch (_) {
+                        return true;
+                    }
+                    var validation = fields[fieldIndex].set(value);
+                    if (!validation.ok) {
+                        utils.MessageBox('\u8bbe\u7f6e\u672a\u4fdd\u5b58\u3002\n\n' + validation.error,
+                            '\u65e0\u6548\u7684\u97f3\u91cf\u6620\u5c04\u7cfb\u6570',
+                            MessageBoxButtons.Ok, MessageBoxIcon.Error);
+                        return true;
+                    }
+                } else if (result === editId + 1) {
+                    fields[fieldIndex].reset();
+                }
+            }
         }
-        if (result && result !== 5) {
+        if (result && result !== HELP_ID) {
             window.RepaintRect(this.volumeControlRect.x, this.volumeControlRect.y,
                 this.volumeControlRect.w, this.volumeControlRect.h);
         }
@@ -349,7 +405,8 @@
     TransportControls.prototype.setVolumeFromX = function (x) {
         var ratio = ns.Util.clamp((x - this.volumeRect.x) / Math.max(1, this.volumeRect.w - 1), 0, 1);
         fb.Volume = ns.VolumeMapping.toDb(ratio, ns.Settings.volumeMode,
-            ns.Settings.volumeCurveK, ns.Settings.volumeVirtualWidthK);
+            ns.Settings.volumeCurveK, ns.Settings.volumeVirtualWidthK,
+            ns.Settings.volumeHybridCurveK, ns.Settings.volumeHybridVirtualWidthK);
         window.RepaintRect(this.volumeControlRect.x, this.volumeControlRect.y,
             this.volumeControlRect.w, this.volumeControlRect.h);
     };

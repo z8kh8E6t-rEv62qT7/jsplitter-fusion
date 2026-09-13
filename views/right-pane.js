@@ -9,6 +9,11 @@
         this.detailRect = null;
         this.detailScroll = 0;
         this.detailKey = '';
+        this.activeTab = 'item';
+        this.playbackScroll = 0;
+        this.output = new ns.OutputInfoModel();
+        this.outputTimer = null;
+        this.disposed = false;
     }
 
     RightPaneView.prototype.layout = function (rect) {
@@ -19,6 +24,76 @@
         var artHeight = Math.min(rect.h, m.header + m.padding * 2 + side);
         this.artRect = { x: rect.x, y: rect.y, w: rect.w, h: artHeight };
         this.detailRect = { x: rect.x, y: rect.y + artHeight, w: rect.w, h: Math.max(0, rect.h - artHeight) };
+        this.syncOutputTimer();
+    };
+
+    RightPaneView.prototype.repaintDetails = function () {
+        var rect = this.detailRect;
+        if (rect && rect.w > 0 && rect.h > 0) window.RepaintRect(rect.x, rect.y, rect.w, rect.h);
+    };
+
+    RightPaneView.prototype.outputVisible = function () {
+        return !this.disposed && this.activeTab === 'playback' && this.detailRect &&
+            this.detailRect.w > 1 && this.detailRect.h > ns.Theme.metrics.header;
+    };
+
+    RightPaneView.prototype.refreshOutput = function () {
+        if (!this.outputVisible() || !window.IsVisible) return;
+        try {
+            if (this.output.refresh()) this.repaintDetails();
+        } catch (error) {
+            // Polling errors remain local to this optional page.
+            try { console.log('Playback details refresh: ' + String(error)); } catch (_) {}
+        }
+    };
+
+    RightPaneView.prototype.syncOutputTimer = function () {
+        if (!this.outputVisible()) {
+            if (this.outputTimer !== null) window.ClearInterval(this.outputTimer);
+            this.outputTimer = null;
+        } else if (this.outputTimer === null) {
+            this.refreshOutput();
+            var self = this;
+            this.outputTimer = window.SetInterval(function () { self.refreshOutput(); }, 1000);
+        }
+    };
+
+    RightPaneView.prototype.dispose = function () {
+        this.disposed = true;
+        this.syncOutputTimer();
+    };
+
+    RightPaneView.prototype.tabRects = function () {
+        var rect = this.detailRect;
+        if (!rect) return [];
+        var firstWidth = Math.floor(rect.w / 2);
+        var height = Math.min(rect.h, ns.Theme.metrics.header);
+        return [
+            { id: 'item', title: 'Item details', x: rect.x, y: rect.y, w: firstWidth, h: height },
+            { id: 'playback', title: 'Playback details', x: rect.x + firstWidth,
+                y: rect.y, w: rect.w - firstWidth, h: height }
+        ];
+    };
+
+    RightPaneView.prototype.drawTabs = function (gr) {
+        var p = ns.Theme.palette;
+        var tabs = this.tabRects();
+        for (var i = 0; i < tabs.length; ++i) {
+            var tab = tabs[i];
+            if (tab.w <= 0 || tab.h <= 0) continue;
+            ns.Util.drawRaised(gr, tab, tab.id === this.activeTab ? p.base : p.button);
+            ns.Util.drawText(gr, tab.title, tab.id === this.activeTab ? ns.Theme.fonts.bold : ns.Theme.fonts.normal,
+                p.text, { x: tab.x + ns.Theme.s(3), y: tab.y,
+                    w: Math.max(0, tab.w - ns.Theme.s(6)), h: tab.h },
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        }
+    };
+
+    RightPaneView.prototype.selectTab = function (tab) {
+        if (this.disposed || (tab !== 'item' && tab !== 'playback') || tab === this.activeTab) return;
+        this.activeTab = tab;
+        this.syncOutputTimer();
+        this.repaintDetails();
     };
 
     RightPaneView.prototype.drawPanelHeader = function (gr, rect, title) {
@@ -101,6 +176,45 @@
         return lines;
     };
 
+    RightPaneView.prototype.playbackLayout = function (gr, body) {
+        var m = ns.Theme.metrics;
+        var width = Math.max(1, body.w - m.padding * 2);
+        var lineHeight = Math.max(ns.Theme.s(21), Math.ceil(gr.CalcTextHeight('Ag\u56fd', ns.Theme.fonts.normal)));
+        var result = [];
+        var y = m.padding;
+        // Draw exactly the lines measured by GDI, so scrolling and wrapping agree.
+        for (var i = 0; i < this.output.rows.length; ++i) {
+            var row = this.output.rows[i];
+            var font = row.kind === 'group' ? ns.Theme.fonts.bold : ns.Theme.fonts.normal;
+            if (row.kind === 'group' && i > 0) y += m.padding;
+            var text = row.kind === 'field' ? row.label + '\uff1a' + row.value : row.text;
+            var paragraphs = text.replace(/\r\n?/g, '\n').split('\n');
+            for (var j = 0; j < paragraphs.length; ++j) {
+                var wrapped = gr.EstimateLineWrap(paragraphs[j] || ' ', font, width);
+                for (var k = 0; k < wrapped.length; k += 2) {
+                    result.push({ text: String(wrapped[k]), y: y, h: lineHeight,
+                        font: font, note: row.kind === 'note' });
+                    y += lineHeight;
+                }
+            }
+        }
+        return { lines: result, height: y + m.padding, width: width };
+    };
+
+    RightPaneView.prototype.drawPlaybackDetails = function (gr, body) {
+        var layout = this.playbackLayout(gr, body);
+        this.playbackScroll = ns.Util.clamp(this.playbackScroll, 0, Math.max(0, layout.height - body.h));
+        for (var i = 0; i < layout.lines.length; ++i) {
+            var line = layout.lines[i];
+            var y = body.y + line.y - this.playbackScroll;
+            if (y + line.h <= body.y || y >= body.y + body.h) continue;
+            ns.Util.drawText(gr, line.text, line.font,
+                line.note ? ns.Theme.palette.disabledText : ns.Theme.palette.text,
+                { x: body.x + ns.Theme.metrics.padding, y: y, w: layout.width, h: line.h },
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        }
+    };
+
     RightPaneView.prototype.drawDetails = function (gr) {
         var p = ns.Theme.palette;
         var m = ns.Theme.metrics;
@@ -108,13 +222,15 @@
         if (this.detailRect.w <= 1 || this.detailRect.h <= 1) return;
         gr.FillSolidRect(this.detailRect.x, this.detailRect.y + m.header,
             this.detailRect.w, Math.max(0, this.detailRect.h - m.header), p.base);
-        var lines = this.detailLines();
+        var lines = this.activeTab === 'item' ? this.detailLines() : [];
         var body = { x: this.detailRect.x, y: this.detailRect.y + m.header,
             w: this.detailRect.w, h: Math.max(0, this.detailRect.h - m.header) };
         if (body.w > 0 && body.h > 0) {
             gr.PushClip(body.x, body.y, body.w, body.h);
             try {
-                if (!lines.length) {
+                if (this.activeTab === 'playback') {
+                    this.drawPlaybackDetails(gr, body);
+                } else if (!lines.length) {
                     ns.Util.drawText(gr, '\u6ca1\u6709\u9009\u4e2d\u7684\u9879\u76ee', f.normal, p.disabledText,
                         body, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
                 } else {
@@ -139,7 +255,7 @@
                 gr.PopClip();
             }
         }
-        this.drawPanelHeader(gr, this.detailRect, 'Item details');
+        this.drawTabs(gr);
         gr.DrawRect(this.detailRect.x, this.detailRect.y, this.detailRect.w - 1, this.detailRect.h - 1, 1, p.border);
     };
 
@@ -149,6 +265,13 @@
     };
 
     RightPaneView.prototype.down = function (x, y) {
+        var tabs = this.tabRects();
+        for (var i = 0; i < tabs.length; ++i) {
+            if (ns.Util.inRect(x, y, tabs[i])) {
+                this.selectTab(tabs[i].id);
+                return true;
+            }
+        }
         return ns.Util.inRect(x, y, this.rect);
     };
 
@@ -158,8 +281,10 @@
 
     RightPaneView.prototype.wheel = function (x, y, step) {
         if (!ns.Util.inRect(x, y, this.detailRect)) return false;
-        this.detailScroll = Math.max(0, this.detailScroll - step * ns.Theme.s(42));
-        window.Repaint();
+        if (y < this.detailRect.y + ns.Theme.metrics.header) return false;
+        if (this.activeTab === 'playback') this.playbackScroll = Math.max(0, this.playbackScroll - step * ns.Theme.s(42));
+        else this.detailScroll = Math.max(0, this.detailScroll - step * ns.Theme.s(42));
+        this.repaintDetails();
         return true;
     };
 

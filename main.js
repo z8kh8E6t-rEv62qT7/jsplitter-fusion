@@ -28,6 +28,7 @@ try {
     fusionInclude('core\\volume-mapping.js');
     fusionInclude('core\\settings.js');
     fusionInclude('core\\playlist-model.js');
+    fusionInclude('core\\output-info.js');
     fusionInclude('core\\artwork.js');
     fusionInclude('views\\scrollbar.js');
     fusionInclude('views\\playlist-manager.js');
@@ -49,6 +50,7 @@ function guarded(action) {
         return action();
     } catch (e) {
         fusionError = e && (e.stack || e.message) ? (e.stack || e.message) : String(e);
+        if (fusionApp && fusionApp.right) fusionApp.right.dispose();
         try { console.log('JSplitter Fusion runtime error: ' + fusionError); } catch (_) {}
         window.Repaint();
         return false;
@@ -89,11 +91,12 @@ function on_playlist_items_reordered(playlistIndex) { guarded(function () { fusi
 function on_playlist_items_selection_change() { guarded(function () { fusionApp.selectionChanged(); }); }
 function on_item_focus_change(playlistIndex) { guarded(function () { fusionApp.selectionChanged(); }); }
 
-function on_playback_new_track() { guarded(function () { fusionApp.displayChanged(); }); }
-function on_playback_dynamic_info_track() { guarded(function () { fusionApp.displayChanged(); }); }
-function on_playback_starting() { guarded(function () { window.Repaint(); }); }
-function on_playback_pause() { guarded(function () { window.Repaint(); }); }
-function on_playback_stop() { guarded(function () { fusionApp.displayChanged(); }); }
+function on_playback_new_track() { guarded(function () { fusionApp.displayChanged(); fusionApp.right.refreshOutput(); }); }
+function on_playback_dynamic_info_track() { guarded(function () { fusionApp.displayChanged(); fusionApp.right.refreshOutput(); }); }
+function on_playback_dynamic_info() { guarded(function () { fusionApp.right.refreshOutput(); }); }
+function on_playback_starting() { guarded(function () { fusionApp.right.refreshOutput(); window.Repaint(); }); }
+function on_playback_pause() { guarded(function () { fusionApp.right.refreshOutput(); window.Repaint(); }); }
+function on_playback_stop() { guarded(function () { fusionApp.displayChanged(); fusionApp.right.refreshOutput(); }); }
 function on_playback_time() {
     guarded(function () {
         var rect = fusionApp.bottom.rect;
@@ -103,6 +106,7 @@ function on_playback_time() {
 }
 function on_volume_change() {
     guarded(function () {
+        fusionApp.right.refreshOutput();
         var rect = fusionApp.bottom.transport.volumeControlRect;
         if (rect) window.RepaintRect(rect.x, rect.y, rect.w, rect.h);
     });
@@ -114,6 +118,9 @@ function on_playback_order_changed() {
     });
 }
 function on_metadb_changed() { guarded(function () { fusionApp.reloadItems(); }); }
+function on_script_unload() {
+    if (fusionApp && fusionApp.right) fusionApp.right.dispose();
+}
 function on_font_changed() {
     guarded(function () {
         FusionUI.Theme.refreshFonts();

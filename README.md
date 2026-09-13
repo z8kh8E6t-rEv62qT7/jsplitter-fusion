@@ -66,6 +66,35 @@ JSplitter 必须作为 Columns UI 面板运行。`main.js` 还会加载 JSplitte
 - 多选不显示封面；空上下文显示 `No artwork` 和“没有选中的项目”。
 - 单项封面由 foobar2000 的封面查询接口获取，图片按比例完整显示。
 
+### Playback details
+
+右栏下方提供 `Item details` 和 `Playback details` 两个标签，上方封面不随标签切换。每次启动默认打开 `Item details`；两页在本次会话中分别保留滚动位置。
+
+`Playback details` 需要已安装 [Output Info（foo_outinfo）](https://foobar.hyv.fi/?view=foo_outinfo)，通过动态 Title Formatting 读取输出链路，与歌曲选择和多选无关。缺少组件或字段读取失败时显示 `No data`，不影响其他界面功能。
+
+| 分组 | 中文字段 | Title Formatting 字段 |
+| --- | --- | --- |
+| 输出 | 输出设备 | `%output_device%` |
+| 输出 | 输出采样率 | `%output_samplerate%` |
+| 输出 | 声道数 | `%output_channels%` |
+| 输出 | 声道布局 | `%output_channel_mask%` |
+| 输出 | 输出位深 | `%output_bitdepth%` |
+| 输出 | 播放音量 | `%output_volume%` |
+| 输出 | 缓冲长度 | `%output_buffer_length%` |
+| DSP | 活动 DSP | `%output_dsps%` |
+| DSP | DSP 链预设 | `%output_dsp_preset%` |
+| ReplayGain | 来源模式 | `%output_rg_source%` |
+| ReplayGain | 处理模式 | `%output_rg_mode%` |
+| ReplayGain | 有效增益 | `%output_rg_gain%` |
+| ReplayGain | 有效峰值 | `%output_rg_peak%` |
+| ReplayGain | 有效峰值（dBFS） | `%output_rg_peak_db%` |
+
+采样率和声道描述的是进入输出组件的音频；输出位深由组件报告，在输出组件没有提供位深时可能是估计值，并非硬件实测保证。数值补充对应的 Hz、bit、dB、dBFS 或 ms 单位，已带单位的内容不重复添加。零值和组件返回的 `-inf` 静音值会保留。
+
+标签显示时每秒读取一次，切入标签及播放状态、音量变化时立即读取；仅内容变化才触发详情区重绘。长设备名和 DSP 内容会自动换行，可在正文区域滚轮浏览。切回 `Item details` 或脚本卸载时清理定时器。
+
+停止播放后仍尝试读取组件可提供的字段，缺失显示 `No data`。前端不会用上次读取值补空，但组件自身可能返回缓存信息，因此停止时看到的值不代表设备仍在输出。
+
 ### 底部控制区
 
 - 按钮行左侧提供停止、播放/暂停、上一首、下一首、Shuffle Tracks、Repeat Track 和添加文件按钮。
@@ -76,12 +105,12 @@ JSplitter 必须作为 Columns UI 面板运行。`main.js` 还会加载 JSplitte
 - 其他播放顺序通过 foobar2000 原生 Playback 菜单选择；自绘控制区不提供播放顺序下拉框。
 - 进度条支持点击定位、拖动预览和释放跳转；未知长度流媒体禁用跳转。
 - 音量条支持点击、拖动和滚轮调节，轨道宽度按 DPI 缩放限制在 96–180px。
-- 右键 dB 数值或音量条可切换曲线系数与虚拟宽度模式，并分别调整各自的 `k`。
+- 右键 dB 数值或音量条可切换曲线系数、虚拟宽度与混合模式，并调整当前模式的 `k`。
 - 进度条上方的 Now Playing 文本始终跟随正在播放项目，不受列表选择影响；停止后留空。
 
 ## 音量条映射
 
-音量条只改变 dB 值与滑块位置之间的换算，不改变 foobar2000 的 `-100…0 dB` 音量范围或音频处理。右键菜单提供两种持久化模式。
+音量条只改变 dB 值与滑块位置之间的换算，不改变 foobar2000 的 `-100…0 dB` 音量范围或音频处理。右键菜单提供三种持久化模式。
 
 **曲线系数模式**保持原有公式：
 
@@ -104,9 +133,18 @@ physicalRatio = 10^(dB / 20) × k
 
 虚拟宽度倍率默认值为 `1`。最左像素固定为 `−∞ dB`，最右像素固定为 `0 dB`；所有中间像素严格使用上述公式，点击与拖动完全一致。`k>1` 时最后一个中间像素和 `0 dB` 之间存在不可选断层，部分高音量值会共同绘制在最右端；`k<1` 时会提前达到 `0 dB`。这是虚拟宽度模式的预期行为，不进行平滑或重新归一化。
 
-两种模式的 `k` 均允许任意大于 `0` 的有限数字，输入框同时接受小数点和小数逗号。菜单显示当前模式的系数设置、重置和“打开说明”；说明窗口会提示曲线模式 `k` 越低常用中低音量区间越精细，虚拟宽度模式 `k` 越高中间像素步进越精细。空值、非数字、`0`、负数和无穷值会被拒绝，原设置保持不变。切换模式或改变 `k` 只会重算滑块位置，不会主动修改当前 dB 值。
+**混合模式**依次应用曲线系数和虚拟宽度倍率：
 
-当前模式、曲线系数和虚拟宽度倍率分别保存在 `jsplitterFusion.volume.mode`、`jsplitterFusion.volume.curveK` 和 `jsplitterFusion.volume.virtualWidthK`。升级后默认保持曲线系数模式；属性缺失或无效时会写入对应默认值。旧版 `jsplitterFusion.volume.mapping` 属性不会删除，但已不再读取。滚轮仍调用 foobar2000 原生音量步进，不受模式或 `k` 影响。
+```text
+position = 10^((dB × curveK) / 20) × virtualWidthK
+dB = 20 × log10(position / virtualWidthK) / curveK
+```
+
+混合模式独立保存两个系数，默认 `curveK = 0.5`、`virtualWidthK = 1`。最左像素固定为 `−∞ dB`，最右像素固定为 `0 dB`，中间像素严格使用组合公式；虚拟宽度倍率造成的端点断层不做归一化。曲线系数越低，常用中低音量区间越精细；虚拟宽度倍率越高，中间像素步进越精细，但靠近 `0 dB` 的端点断层也越大。
+
+三种模式的 `k` 均允许任意大于 `0` 的有限数字，输入框同时接受小数点和小数逗号。混合模式的两个系数可分别设置和重置。菜单中的“打开说明”会显示各模式的调整方向和混合公式。空值、非数字、`0`、负数和无穷值会被拒绝，原设置保持不变。切换模式或改变 `k` 只会重算滑块位置，不会主动修改当前 dB 值。
+
+当前模式及各模式系数分别保存在 `jsplitterFusion.volume.mode`、`jsplitterFusion.volume.curveK`、`jsplitterFusion.volume.virtualWidthK`、`jsplitterFusion.volume.hybridCurveK` 和 `jsplitterFusion.volume.hybridVirtualWidthK`。升级后默认保持曲线系数模式；属性缺失或无效时会写入对应默认值，不执行迁移。旧版 `jsplitterFusion.volume.mapping` 属性不会删除，但已不再读取。滚轮仍调用 foobar2000 原生音量步进，不受模式或 `k` 影响。
 
 ## Now Playing 标题模板
 
@@ -137,9 +175,11 @@ $if2(%title%,$if2(%filename_ext%,no title))
 | `scroll.<playlist-guid>` | 各播放列表纵向位置 |
 | `hscroll.<playlist-guid>` | 各播放列表横向位置 |
 | `nowPlaying.format` | Now Playing 标题模板 |
-| `volume.mode` | 音量映射模式：`curve` 或 `virtualWidth` |
+| `volume.mode` | 音量映射模式：`curve`、`virtualWidth` 或 `hybrid` |
 | `volume.curveK` | 音量条真实振幅曲线系数，必须为大于 `0` 的有限数字 |
 | `volume.virtualWidthK` | 虚拟宽度倍率，必须为大于 `0` 的有限数字 |
+| `volume.hybridCurveK` | 混合模式独立曲线系数，必须为大于 `0` 的有限数字 |
+| `volume.hybridVirtualWidthK` | 混合模式独立虚拟宽度倍率，必须为大于 `0` 的有限数字 |
 
 完整属性名需要加上 `jsplitterFusion.` 前缀。正常情况下应通过界面操作修改这些属性，而不是手动编辑配置文件。
 
@@ -150,6 +190,7 @@ main.js                         入口、回调注册和顶层错误保护
 theme.js                        Fusion 调色板、字体、DPI 与控件尺寸
 core/
   artwork.js                    封面请求、缓存和过期结果保护
+  output-info.js                foo_outinfo 输出字段、单位与动态快照
   playlist-model.js             播放列表、显示上下文和详情数据
   settings.js                   面板属性读取、校验与迁移
   utils.js                      绘制、格式化和通用辅助函数
@@ -158,7 +199,7 @@ views/
   app.js                        总体布局与事件分发
   playlist-manager.js           左侧播放列表管理器
   playlist-view.js              中央歌曲列表、列和选择交互
-  right-pane.js                 封面与 Item details
+  right-pane.js                 封面、详情标签和输出信息轮询
   scrollbar.js                  横纵通用滚动条
   transport-controls.js         播放、静音、音量、播放顺序按钮与标题模板菜单
   bottom-bar.js                 进度与信息摘要
@@ -167,6 +208,7 @@ assets/
   README.md                     图标来源与精灵单元说明
 tests/
   jsplitter-fusion-tests.js      Node.js 回归测试入口
+  output-info-tests.js           输出字段、标签绘制及刷新生命周期测试
 tools/
   generate-transport-icons.py   Material Icons 精灵图生成工具
 ```
@@ -176,6 +218,8 @@ tools/
 ## 开发与验证
 
 源码直接由 JSplitter 执行，没有打包步骤。修改完成后将仓库内容同步到运行目录，再重新加载面板或重启 foobar2000。
+
+运行脚本中的中文和其他非 ASCII 字符使用 `\uXXXX` 转义，避免 File/include 加载时受系统代码页影响而显示乱码；README 和测试中的中文仍使用 UTF-8。输出详情测试会检查相关运行脚本的字节编码和中文值。
 
 可先用 Node.js 对全部 JavaScript 文件进行语法检查：
 

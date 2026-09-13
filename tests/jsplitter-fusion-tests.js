@@ -21,10 +21,12 @@ function assertClose(actual, expected, epsilon = 1e-10) {
     const context = { FusionUI: {} };
     run('core/volume-mapping.js', context);
     const mapping = context.FusionUI.VolumeMapping;
-    assert.deepStrictEqual(Array.from(mapping.modes), ['curve', 'virtualWidth']);
+    assert.deepStrictEqual(Array.from(mapping.modes), ['curve', 'virtualWidth', 'hybrid']);
     assert.strictEqual(mapping.defaultMode, 'curve');
     assert.strictEqual(mapping.defaultCurveK, 0.5);
     assert.strictEqual(mapping.defaultVirtualWidthK, 1);
+    assert.strictEqual(mapping.defaultHybridCurveK, 0.5);
+    assert.strictEqual(mapping.defaultHybridVirtualWidthK, 1);
     assert.strictEqual(mapping.normalizeMode('unknown'), 'curve');
     assertClose(mapping.curveToPosition(-20, 0.5), Math.pow(10, -0.5));
     assertClose(mapping.curveToPosition(-20, 1), 0.1);
@@ -66,11 +68,33 @@ function assertClose(actual, expected, epsilon = 1e-10) {
     assertClose(mapping.virtualWidthToDb(0.99, 1.5), 20 * Math.log10(0.99 / 1.5));
     assert.strictEqual(mapping.virtualWidthToDb(1, 1.5), 0);
     assert.strictEqual(mapping.virtualWidthToDb(0.5, 0.1), 0);
-    assertClose(mapping.toPosition(-20, 'curve', 0.5, 1.5), Math.pow(10, -0.5));
-    assertClose(mapping.toPosition(-20, 'virtualWidth', 0.5, 1.5), 0.15);
-    assertClose(mapping.toDb(0.1, 'curve', 0.5, 1.5), -40);
-    assertClose(mapping.toDb(0.1, 'virtualWidth', 0.5, 1.5),
+    for (const pair of [[0.5, 1], [1, 1.5], [2, 0.1]]) {
+        const [curveK, virtualWidthK] = pair;
+        assert.strictEqual(mapping.hybridToPosition(-100, curveK, virtualWidthK), 0);
+        assert.strictEqual(mapping.hybridToPosition(0, curveK, virtualWidthK), 1);
+        assert.strictEqual(mapping.hybridToDb(0, curveK, virtualWidthK), -100);
+        assert.strictEqual(mapping.hybridToDb(1, curveK, virtualWidthK), 0);
+    }
+    assertClose(mapping.hybridToPosition(-20, 0.5, 1.5), Math.pow(10, -0.5) * 1.5);
+    assertClose(mapping.hybridToDb(0.25, 0.5, 1.5),
+        20 * Math.log10(0.25 / 1.5) / 0.5);
+    assert.strictEqual(mapping.hybridToPosition(-1, 0.5, 10), 1);
+    assert.strictEqual(mapping.hybridToDb(0.5, 0.5, 0.1), 0);
+    for (const pair of [[0.000001, 1000000], [1000000, 0.000001]]) {
+        const position = mapping.hybridToPosition(-20, pair[0], pair[1]);
+        const db = mapping.hybridToDb(0.5, pair[0], pair[1]);
+        assert(Number.isFinite(position) && position >= 0 && position <= 1);
+        assert(Number.isFinite(db) && db >= -100 && db <= 0);
+    }
+    assertClose(mapping.toPosition(-20, 'curve', 0.5, 1.5, 0.25, 2), Math.pow(10, -0.5));
+    assertClose(mapping.toPosition(-20, 'virtualWidth', 0.5, 1.5, 0.25, 2), 0.15);
+    assertClose(mapping.toPosition(-20, 'hybrid', 0.5, 1.5, 0.25, 0.5),
+        Math.pow(10, -0.25) * 0.5);
+    assertClose(mapping.toDb(0.1, 'curve', 0.5, 1.5, 0.25, 2), -40);
+    assertClose(mapping.toDb(0.1, 'virtualWidth', 0.5, 1.5, 0.25, 2),
         20 * Math.log10(0.1 / 1.5));
+    assertClose(mapping.toDb(0.5, 'hybrid', 0.5, 1.5, 0.25, 2),
+        20 * Math.log10(0.5 / 2) / 0.25);
 }
 
 function settingsContext(initial) {
@@ -141,9 +165,13 @@ function settingsContext(initial) {
     assert.strictEqual(result.settings.volumeMode, 'curve');
     assert.strictEqual(result.settings.volumeCurveK, 0.5);
     assert.strictEqual(result.settings.volumeVirtualWidthK, 1);
+    assert.strictEqual(result.settings.volumeHybridCurveK, 0.5);
+    assert.strictEqual(result.settings.volumeHybridVirtualWidthK, 1);
     assert.strictEqual(result.properties.get('jsplitterFusion.volume.mode'), 'curve');
     assert.strictEqual(result.properties.get('jsplitterFusion.volume.curveK'), 0.5);
     assert.strictEqual(result.properties.get('jsplitterFusion.volume.virtualWidthK'), 1);
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.hybridCurveK'), 0.5);
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.hybridVirtualWidthK'), 1);
     const changed = result.settings.setNowPlayingFormat('%artist% — %title%', { preview: 'Artist — Title' });
     assert.strictEqual(changed.ok, true);
     assert.strictEqual(changed.preview, 'Artist — Title');
@@ -164,11 +192,15 @@ function settingsContext(initial) {
         'jsplitterFusion.volume.mode': 'virtualWidth',
         'jsplitterFusion.volume.curveK': '0,75',
         'jsplitterFusion.volume.virtualWidthK': '1,5',
+        'jsplitterFusion.volume.hybridCurveK': '0,25',
+        'jsplitterFusion.volume.hybridVirtualWidthK': '2,5',
         'jsplitterFusion.volume.mapping': 'legacy'
     });
     assert.strictEqual(result.settings.volumeMode, 'virtualWidth');
     assert.strictEqual(result.settings.volumeCurveK, 0.75);
     assert.strictEqual(result.settings.volumeVirtualWidthK, 1.5);
+    assert.strictEqual(result.settings.volumeHybridCurveK, 0.25);
+    assert.strictEqual(result.settings.volumeHybridVirtualWidthK, 2.5);
     assert.strictEqual(result.properties.get('jsplitterFusion.volume.mapping'), 'legacy');
     assert.strictEqual(result.settings.setVolumeMode('curve'), 'curve');
     assert.strictEqual(result.properties.get('jsplitterFusion.volume.mode'), 'curve');
@@ -185,20 +217,40 @@ function settingsContext(initial) {
     assert.strictEqual(result.settings.volumeVirtualWidthK, 20);
     assert.strictEqual(result.settings.resetVolumeVirtualWidthK(), 1);
     assert.strictEqual(result.properties.get('jsplitterFusion.volume.virtualWidthK'), 1);
+    assert.strictEqual(result.settings.setVolumeMode('hybrid'), 'hybrid');
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.mode'), 'hybrid');
+    assert.strictEqual(result.settings.setVolumeHybridCurveK('0,125').value, 0.125);
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.hybridCurveK'), 0.125);
+    assert.strictEqual(result.settings.setVolumeHybridCurveK(Infinity).ok, false);
+    assert.strictEqual(result.settings.volumeHybridCurveK, 0.125);
+    assert.strictEqual(result.settings.resetVolumeHybridCurveK(), 0.5);
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.hybridCurveK'), 0.5);
+    assert.strictEqual(result.settings.setVolumeHybridVirtualWidthK('3,5').value, 3.5);
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.hybridVirtualWidthK'), 3.5);
+    assert.strictEqual(result.settings.setVolumeHybridVirtualWidthK(-1).ok, false);
+    assert.strictEqual(result.settings.volumeHybridVirtualWidthK, 3.5);
+    assert.strictEqual(result.settings.resetVolumeHybridVirtualWidthK(), 1);
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.hybridVirtualWidthK'), 1);
 }
 
 {
     const result = settingsContext({
         'jsplitterFusion.volume.mode': 'invalid',
         'jsplitterFusion.volume.curveK': 0,
-        'jsplitterFusion.volume.virtualWidthK': 0
+        'jsplitterFusion.volume.virtualWidthK': 0,
+        'jsplitterFusion.volume.hybridCurveK': 0,
+        'jsplitterFusion.volume.hybridVirtualWidthK': Infinity
     });
     assert.strictEqual(result.settings.volumeMode, 'curve');
     assert.strictEqual(result.settings.volumeCurveK, 0.5);
     assert.strictEqual(result.settings.volumeVirtualWidthK, 1);
+    assert.strictEqual(result.settings.volumeHybridCurveK, 0.5);
+    assert.strictEqual(result.settings.volumeHybridVirtualWidthK, 1);
     assert.strictEqual(result.properties.get('jsplitterFusion.volume.mode'), 'curve');
     assert.strictEqual(result.properties.get('jsplitterFusion.volume.curveK'), 0.5);
     assert.strictEqual(result.properties.get('jsplitterFusion.volume.virtualWidthK'), 1);
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.hybridCurveK'), 0.5);
+    assert.strictEqual(result.properties.get('jsplitterFusion.volume.hybridVirtualWidthK'), 1);
 }
 
 function detailRecord(overrides) {
@@ -605,6 +657,8 @@ function handleList(handles, duration, size) {
                 volumeMode: 'curve',
                 volumeCurveK: 0.5,
                 volumeVirtualWidthK: 1,
+                volumeHybridCurveK: 0.5,
+                volumeHybridVirtualWidthK: 1,
                 resetNowPlayingFormat: () => { resetCount += 1; },
                 setVolumeMode(value) {
                     this.volumeMode = context.FusionUI.VolumeMapping.normalizeMode(value);
@@ -624,6 +678,24 @@ function handleList(handles, duration, size) {
                 resetVolumeVirtualWidthK() {
                     this.volumeVirtualWidthK = 1;
                     return this.volumeVirtualWidthK;
+                },
+                setVolumeHybridCurveK(value) {
+                    const validation = context.FusionUI.VolumeMapping.validateK(value);
+                    if (validation.ok) this.volumeHybridCurveK = validation.value;
+                    return validation;
+                },
+                resetVolumeHybridCurveK() {
+                    this.volumeHybridCurveK = 0.5;
+                    return this.volumeHybridCurveK;
+                },
+                setVolumeHybridVirtualWidthK(value) {
+                    const validation = context.FusionUI.VolumeMapping.validateK(value);
+                    if (validation.ok) this.volumeHybridVirtualWidthK = validation.value;
+                    return validation;
+                },
+                resetVolumeHybridVirtualWidthK() {
+                    this.volumeHybridVirtualWidthK = 1;
+                    return this.volumeHybridVirtualWidthK;
                 }
             }
         },
@@ -708,7 +780,7 @@ function handleList(handles, duration, size) {
     assert.strictEqual(controls.context(controls.statusRect.x + 1, 10), true);
     assert.strictEqual(resetCount, 1);
     menuItems.length = 0;
-    popupResult = 3;
+    popupResult = 10;
     const volumeBeforeMenu = context.fb.Volume;
     const positionBeforeMenu = controls.volumePosition();
     assert.strictEqual(controls.context(controls.volumeMenuRect.x + 1, 10), true);
@@ -716,8 +788,8 @@ function handleList(handles, duration, size) {
     assert.strictEqual(context.fb.Volume, volumeBeforeMenu);
     assert.notStrictEqual(controls.volumePosition(), positionBeforeMenu);
     assert.deepStrictEqual(menuItems.map(item => item.label),
-        ['曲线系数模式', '虚拟宽度模式', '曲线系数 k…（当前 0.5）', '重置为 0.5', '打开说明']);
-    assert.deepStrictEqual(checkedItems, [{ first: 1, last: 2, selected: 1 }]);
+        ['曲线系数模式', '虚拟宽度模式', '混合模式', '曲线系数 k…（当前 0.5）', '重置为 0.5', '打开说明']);
+    assert.deepStrictEqual(checkedItems, [{ first: 1, last: 3, selected: 1 }]);
     assert.strictEqual(separatorCount, 2);
 
     menuItems.length = 0;
@@ -727,7 +799,7 @@ function handleList(handles, duration, size) {
     assert.strictEqual(context.fb.Volume, volumeBeforeMenu);
 
     menuItems.length = 0;
-    popupResult = 3;
+    popupResult = 10;
     inputValue = '1,5';
     const virtualPositionBeforeMenu = controls.volumePosition();
     controls.context(controls.volumeMenuRect.x + 1, 10);
@@ -735,42 +807,86 @@ function handleList(handles, duration, size) {
     assert.strictEqual(context.fb.Volume, volumeBeforeMenu);
     assert.notStrictEqual(controls.volumePosition(), virtualPositionBeforeMenu);
     assert.deepStrictEqual(menuItems.map(item => item.label),
-        ['曲线系数模式', '虚拟宽度模式', '虚拟宽度倍率 k…（当前 1）', '重置为 1', '打开说明']);
-    assert.deepStrictEqual(checkedItems[checkedItems.length - 1], { first: 1, last: 2, selected: 2 });
+        ['曲线系数模式', '虚拟宽度模式', '混合模式', '虚拟宽度倍率 k…（当前 1）', '重置为 1', '打开说明']);
+    assert.deepStrictEqual(checkedItems[checkedItems.length - 1], { first: 1, last: 3, selected: 2 });
 
     menuItems.length = 0;
-    popupResult = 4;
+    popupResult = 11;
     controls.context(controls.volumeMenuRect.x + 1, 10);
     assert.strictEqual(context.FusionUI.Settings.volumeVirtualWidthK, 1);
 
     menuItems.length = 0;
-    popupResult = 3;
+    popupResult = 10;
     inputValue = '0';
     controls.context(controls.volumeMenuRect.x + 1, 10);
     assert.strictEqual(context.FusionUI.Settings.volumeVirtualWidthK, 1);
     assert.strictEqual(messages.length, 1);
 
-    popupResult = 5;
+    popupResult = 100;
     const repaintCountBeforeHelp = repaints.length;
     controls.context(controls.volumeMenuRect.x + 1, 10);
     assert.strictEqual(messages.length, 2);
     assert.strictEqual(messages[1].title, '音量映射说明');
     assert(messages[1].message.includes('k 越低'));
     assert(messages[1].message.includes('k 越高'));
+    assert(messages[1].message.includes('混合模式'));
+    assert(messages[1].message.includes('position = 10^'));
     assert.strictEqual(repaints.length, repaintCountBeforeHelp);
 
     popupResult = 1;
     controls.context(controls.volumeMenuRect.x + 1, 10);
     assert.strictEqual(context.FusionUI.Settings.volumeMode, 'curve');
-    popupResult = 4;
+    popupResult = 11;
     controls.context(controls.volumeMenuRect.x + 1, 10);
     assert.strictEqual(context.FusionUI.Settings.volumeCurveK, 0.5);
+
+    popupResult = 3;
+    controls.context(controls.volumeMenuRect.x + 1, 10);
+    assert.strictEqual(context.FusionUI.Settings.volumeMode, 'hybrid');
+    assert.strictEqual(context.fb.Volume, volumeBeforeMenu);
+
+    menuItems.length = 0;
+    popupResult = 10;
+    inputValue = '0,25';
+    const hybridPositionBeforeMenu = controls.volumePosition();
+    controls.context(controls.volumeMenuRect.x + 1, 10);
+    assert.strictEqual(context.FusionUI.Settings.volumeHybridCurveK, 0.25);
+    assert.strictEqual(context.fb.Volume, volumeBeforeMenu);
+    assert.notStrictEqual(controls.volumePosition(), hybridPositionBeforeMenu);
+    assert.deepStrictEqual(menuItems.map(item => item.label), [
+        '曲线系数模式', '虚拟宽度模式', '混合模式',
+        '混合曲线系数 k…（当前 0.5）', '重置为 0.5',
+        '混合虚拟宽度倍率 k…（当前 1）', '重置为 1', '打开说明'
+    ]);
+    assert.deepStrictEqual(checkedItems[checkedItems.length - 1], { first: 1, last: 3, selected: 3 });
+
+    popupResult = 12;
+    inputValue = '1,5';
+    controls.context(controls.volumeMenuRect.x + 1, 10);
+    assert.strictEqual(context.FusionUI.Settings.volumeHybridVirtualWidthK, 1.5);
+    popupResult = 11;
+    controls.context(controls.volumeMenuRect.x + 1, 10);
+    assert.strictEqual(context.FusionUI.Settings.volumeHybridCurveK, 0.5);
+    popupResult = 13;
+    controls.context(controls.volumeMenuRect.x + 1, 10);
+    assert.strictEqual(context.FusionUI.Settings.volumeHybridVirtualWidthK, 1);
 
     controls.volumeRect = { x: 600, y: 17, w: 101, h: 6 };
     controls.volumeControlRect = { x: 500, y: 0, w: 295, h: 40 };
     controls.volumeMenuRect = { x: 530, y: 0, w: 265, h: 40 };
+    assert.strictEqual(context.FusionUI.Settings.volumeMode, 'hybrid');
     controls.setVolumeFromX(610);
     assertClose(context.fb.Volume, -40);
+    context.FusionUI.Settings.volumeHybridCurveK = 0.5;
+    context.FusionUI.Settings.volumeHybridVirtualWidthK = 1.5;
+    context.fb.Volume = -20;
+    assertClose(controls.volumePosition(), Math.pow(10, -0.5) * 1.5);
+    controls.setVolumeFromX(600);
+    assert.strictEqual(context.fb.Volume, -100);
+    controls.setVolumeFromX(699);
+    assertClose(context.fb.Volume, 20 * Math.log10(0.99 / 1.5) / 0.5);
+    controls.setVolumeFromX(700);
+    assert.strictEqual(context.fb.Volume, 0);
 
     context.FusionUI.Settings.volumeMode = 'virtualWidth';
     context.FusionUI.Settings.volumeVirtualWidthK = 1.5;
@@ -964,6 +1080,8 @@ assert(!settingsSource.includes("GetProperty(prefix + 'volume.mapping'"));
 assert(settingsSource.includes("GetProperty(prefix + 'volume.mode'"));
 assert(settingsSource.includes("readVolumeK('volume.curveK'"));
 assert(settingsSource.includes("'volume.virtualWidthK'"));
+assert(settingsSource.includes("'volume.hybridCurveK'"));
+assert(settingsSource.includes("'volume.hybridVirtualWidthK'"));
 
 const volumeMappingSource = fs.readFileSync(path.join(sourceRoot, 'core/volume-mapping.js'), 'utf8');
 assert(!volumeMappingSource.includes('dbLinear'));
@@ -977,4 +1095,5 @@ const iconData = fs.readFileSync(path.join(sourceRoot, 'assets/transport-icons.p
 assert.strictEqual(iconData.readUInt32BE(16), 960);
 assert.strictEqual(iconData.readUInt32BE(20), 96);
 
+require('./output-info-tests.js');
 console.log('JSplitter Fusion tests passed');
