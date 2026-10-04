@@ -141,7 +141,7 @@
         var meta = this.model.meta[itemIndex] || {};
         if (columnIndex === 0) return String(itemIndex + 1);
         var definition = ns.Settings.columnDefinitions[columnIndex];
-        return definition && meta[definition.key] ? meta[definition.key] : 'No data';
+        return definition && meta[definition.key] != null ? meta[definition.key] : 'No data';
     };
 
     PlaylistView.prototype.columnCentered = function (columnIndex) {
@@ -313,7 +313,7 @@
         var candidates = [];
         for (var i = 0; i < this.visibleColumns.length; ++i) {
             var column = this.visibleColumns[i];
-            if (column.index >= 2 && column.index !== this.headerDownColumn &&
+            if (column.index > 0 && column.index !== this.headerDownColumn &&
                     column.x + column.width > this.rect.x && column.x < this.rect.x + this.viewportWidth) {
                 candidates.push(column);
             }
@@ -330,21 +330,21 @@
             var last = candidates[candidates.length - 1];
             this.headerDropMarkerX = last.x + last.width;
         } else {
-            var title = null;
+            var indexColumn = null;
             for (var v = 0; v < this.visibleColumns.length; ++v) {
-                if (this.visibleColumns[v].index === 1) title = this.visibleColumns[v];
+                if (this.visibleColumns[v].index === 0) indexColumn = this.visibleColumns[v];
             }
-            this.headerDropMarkerX = title ? title.x + title.width : this.rect.x;
+            this.headerDropMarkerX = indexColumn ? indexColumn.x + indexColumn.width : this.rect.x;
         }
     };
 
     PlaylistView.prototype.commitHeaderDrop = function () {
         var order = ns.Settings.columnOrder.slice(0);
         var source = order.indexOf(this.headerDownColumn);
-        if (source < 2) return false;
+        if (source < 1) return false;
         order.splice(source, 1);
         var target = this.headerDropBefore >= 0 ? order.indexOf(this.headerDropBefore) : order.length;
-        if (target < 2) target = 2;
+        if (target < 1) target = 1;
         order.splice(target, 0, this.headerDownColumn);
         if (!ns.Settings.setColumnOrder(order)) return false;
         this.layout(this.rect);
@@ -362,7 +362,7 @@
         }
         var headerColumn = this.headerColumnAt(x, y);
         if (headerColumn >= 0) {
-            if (headerColumn >= 2) {
+            if (headerColumn > 0) {
                 this.headerDownColumn = headerColumn;
                 this.headerDownPoint = { x: x, y: y };
                 this.draggingHeader = false;
@@ -401,7 +401,7 @@
             window.Repaint();
             return true;
         }
-        if (this.headerDownColumn >= 2 && this.headerDownPoint) {
+        if (this.headerDownColumn > 0 && this.headerDownPoint) {
             if (!this.draggingHeader) {
                 var headerDistance = Math.abs(x - this.headerDownPoint.x) + Math.abs(y - this.headerDownPoint.y);
                 if (headerDistance < ns.Theme.s(7)) return true;
@@ -432,7 +432,7 @@
             this.resizeColumn = -1;
             return true;
         }
-        if (this.headerDownColumn >= 2) {
+        if (this.headerDownColumn > 0) {
             var shouldCommit = this.draggingHeader && this.headerDropMarkerX != null &&
                 y >= this.rect.y && y < this.rect.y + ns.Theme.metrics.header &&
                 x >= this.rect.x && x < this.rect.x + this.viewportWidth;
@@ -502,8 +502,8 @@
         var definitions = ns.Settings.columnDefinitions;
         for (var i = 0; i < definitions.length; ++i) {
             var id = 100 + i;
-            menu.AppendMenuItem(definitions[i].alwaysVisible ? MF_GRAYED : MF_STRING, id, definitions[i].name);
-            menu.CheckMenuItem(id, definitions[i].alwaysVisible || ns.Settings.columnVisible[i]);
+            menu.AppendMenuItem(MF_STRING, id, definitions[i].name);
+            menu.CheckMenuItem(id, ns.Settings.columnVisible[i]);
         }
         var result = menu.TrackPopupMenu(x, y);
         if (result === 1 && clicked >= 0) {
@@ -516,11 +516,9 @@
             this.autoFitColumns(visible);
         } else if (result >= 100 && result < 100 + definitions.length) {
             var index = result - 100;
-            if (!definitions[index].alwaysVisible) {
-                ns.Settings.setColumnVisible(index, !ns.Settings.columnVisible[index]);
-                this.layout(this.rect);
-                window.Repaint();
-            }
+            ns.Settings.setColumnVisible(index, !ns.Settings.columnVisible[index]);
+            this.layout(this.rect);
+            window.Repaint();
         }
         return true;
     };

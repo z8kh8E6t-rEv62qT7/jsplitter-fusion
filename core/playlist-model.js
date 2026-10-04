@@ -8,6 +8,11 @@
         return value == null ? '' : String(value).trim();
     }
 
+    function trackText(value) {
+        value = rawText(value);
+        return /^[0-9]+$/.test(value) ? value.replace(/^0+/, '') || '0' : value;
+    }
+
     function withUnit(value, unit) {
         value = rawText(value);
         return value ? value + ' ' + unit : MISSING;
@@ -87,6 +92,8 @@
         var artists = count ? this.tf.artist.EvalWithMetadbs(this.handles) : [];
         var albums = count ? this.tf.album.EvalWithMetadbs(this.handles) : [];
         var lengths = count ? this.tf.length.EvalWithMetadbs(this.handles) : [];
+        var tracknumbers = count ? this.tf.tracknumber.EvalWithMetadbs(this.handles) : [];
+        var totaltracks = count ? this.tf.totaltracks.EvalWithMetadbs(this.handles) : [];
         var filenames = count ? this.tf.filename.EvalWithMetadbs(this.handles) : [];
         var codecs = count ? this.tf.codec.EvalWithMetadbs(this.handles) : [];
         var bitrates = count ? this.tf.bitrate.EvalWithMetadbs(this.handles) : [];
@@ -114,6 +121,8 @@
                 artist: ns.Util.safeText(artists[i]),
                 album: ns.Util.safeText(albums[i]),
                 length: ns.Util.safeText(lengths[i]),
+                tracknumber: trackText(tracknumbers[i]),
+                totaltracks: trackText(totaltracks[i]),
                 filename: ns.Util.safeText(filenames[i]),
                 codec: technical.codec,
                 bitrate: technical.bitrate,

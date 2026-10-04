@@ -3,21 +3,23 @@
 
     var prefix = 'jsplitterFusion.';
     var columnDefinitions = [
-        { id: 'index', name: '#', key: '', width: 42, minWidth: 28, visible: true, alwaysVisible: false, centered: true },
-        { id: 'title', name: 'Title', key: 'title', width: 260, minWidth: 64, visible: true, alwaysVisible: true, centered: false },
-        { id: 'artist', name: 'Artist', key: 'artist', width: 150, minWidth: 64, visible: true, alwaysVisible: false, centered: false },
-        { id: 'album', name: 'Album', key: 'album', width: 190, minWidth: 64, visible: true, alwaysVisible: false, centered: false },
-        { id: 'length', name: 'Length', key: 'length', width: 70, minWidth: 44, visible: true, alwaysVisible: false, centered: true },
-        { id: 'filename', name: 'Filename', key: 'filename', width: 160, minWidth: 64, visible: false, alwaysVisible: false, centered: false },
-        { id: 'codec', name: 'Codec', key: 'codec', width: 120, minWidth: 64, visible: false, alwaysVisible: false, centered: false },
-        { id: 'bitrate', name: 'Bitrate', key: 'bitrate', width: 100, minWidth: 64, visible: false, alwaysVisible: false, centered: false },
-        { id: 'samplerate', name: 'Sample rate', key: 'samplerate', width: 110, minWidth: 64, visible: false, alwaysVisible: false, centered: false },
-        { id: 'bitdepth', name: 'Bit depth', key: 'bitdepth', width: 90, minWidth: 64, visible: false, alwaysVisible: false, centered: false },
-        { id: 'channels', name: 'Channels', key: 'channels', width: 90, minWidth: 64, visible: false, alwaysVisible: false, centered: false },
-        { id: 'filesize', name: 'File size', key: 'filesize', width: 110, minWidth: 64, visible: false, alwaysVisible: false, centered: false }
+        { id: 'index', name: '#', key: '', width: 42, minWidth: 28, visible: true, centered: true },
+        { id: 'title', name: 'Title', key: 'title', width: 260, minWidth: 64, visible: true, centered: false },
+        { id: 'artist', name: 'Artist', key: 'artist', width: 150, minWidth: 64, visible: true, centered: false },
+        { id: 'album', name: 'Album', key: 'album', width: 190, minWidth: 64, visible: true, centered: false },
+        { id: 'length', name: 'Length', key: 'length', width: 70, minWidth: 44, visible: true, centered: true },
+        { id: 'filename', name: 'Filename', key: 'filename', width: 160, minWidth: 64, visible: false, centered: false },
+        { id: 'codec', name: 'Codec', key: 'codec', width: 120, minWidth: 64, visible: false, centered: false },
+        { id: 'bitrate', name: 'Bitrate', key: 'bitrate', width: 100, minWidth: 64, visible: false, centered: false },
+        { id: 'samplerate', name: 'Sample rate', key: 'samplerate', width: 110, minWidth: 64, visible: false, centered: false },
+        { id: 'bitdepth', name: 'Bit depth', key: 'bitdepth', width: 90, minWidth: 64, visible: false, centered: false },
+        { id: 'channels', name: 'Channels', key: 'channels', width: 90, minWidth: 64, visible: false, centered: false },
+        { id: 'filesize', name: 'File size', key: 'filesize', width: 110, minWidth: 64, visible: false, centered: false },
+        { id: 'tracknumber', name: '\u2116', key: 'tracknumber', width: 42, minWidth: 28, visible: true, centered: true },
+        { id: 'totaltracks', name: 'Total', key: 'totaltracks', width: 64, minWidth: 48, visible: true, centered: true }
     ];
     var columnIds = columnDefinitions.map(function (column) { return column.id; });
-    var defaultColumnOrder = [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4];
+    var defaultColumnOrder = [0, 12, 13, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4];
     var defaultNowPlayingFormat = '$if2(%title%,$if2(%filename_ext%,no title))';
 
     function number(name, fallback, min, max) {
@@ -93,26 +95,34 @@
     function readColumnOrder() {
         var raw = String(window.GetProperty(prefix + 'column.order', ''));
         var parts = raw.split(',');
-        if (parts.length !== columnIds.length) return resetColumnOrder();
+        var legacy = parts.length === 12;
+        if (!legacy && parts.length !== columnIds.length) return resetColumnOrder();
         var seen = {};
         var order = [];
         for (var i = 0; i < parts.length; ++i) {
             var id = parts[i].trim();
             var index = columnIds.indexOf(id);
-            if (index < 0 || seen[id]) return resetColumnOrder();
+            if (index < 0 || seen[id] || (legacy && index >= 12)) return resetColumnOrder();
             seen[id] = true;
             order.push(index);
         }
+        if (legacy) {
+            // The previous schema required index and title in the first two positions.
+            if (order[0] !== 0 || order[1] !== 1) return resetColumnOrder();
+            order.splice(1, 0, 12, 13);
+        }
         if (!validColumnOrder(order)) return resetColumnOrder();
+        if (legacy) saveColumnOrder(order);
         return order;
     }
 
     function validColumnOrder(order) {
-        if (!order || order.length !== columnIds.length || order[0] !== 0 || order[1] !== 1) return false;
+        if (!order || order.length !== columnIds.length || order[0] !== 0) return false;
         var seen = {};
         for (var i = 0; i < order.length; ++i) {
             var index = order[i];
-            if (index < 0 || index >= columnIds.length || seen[index]) return false;
+            if (typeof index !== 'number' || index % 1 !== 0 ||
+                    index < 0 || index >= columnIds.length || seen[index]) return false;
             seen[index] = true;
         }
         return true;
@@ -124,8 +134,7 @@
         var definition = columnDefinitions[columnIndex];
         columnWidths.push(number('column.' + definition.id, ns.Theme.s(definition.width),
             ns.Theme.s(definition.minWidth), ns.Theme.s(10000)));
-        columnVisible.push(definition.alwaysVisible ? true :
-            boolean('column.visible.' + definition.id, definition.visible));
+        columnVisible.push(boolean('column.visible.' + definition.id, definition.visible));
     }
 
     ns.Settings = {
@@ -215,7 +224,6 @@
             set('column.' + columnIds[index], value);
         },
         setColumnVisible: function (index, value) {
-            if (columnDefinitions[index] && columnDefinitions[index].alwaysVisible) value = true;
             this.columnVisible[index] = !!value;
             set('column.visible.' + columnIds[index], this.columnVisible[index]);
         },

@@ -117,7 +117,53 @@ function settingsContext(initial) {
     };
     run('core/volume-mapping.js', context);
     run('core/settings.js', context);
-    return { settings: context.FusionUI.Settings, properties };
+    return { settings: context.FusionUI.Settings, properties, context };
+}
+
+{
+    const oldOrder = 'index,title,length,filesize,channels,bitdepth,samplerate,bitrate,codec,filename,album,artist';
+    const result = settingsContext({
+        'jsplitterFusion.column.order': oldOrder,
+        'jsplitterFusion.column.title': 333,
+        'jsplitterFusion.column.visible.artist': false
+    });
+    const settings = result.settings;
+    assert.strictEqual(result.properties.get('jsplitterFusion.column.order'),
+        oldOrder.replace('index,title', 'index,tracknumber,totaltracks,title'));
+    assert.strictEqual(settings.columns[1], 333);
+    assert.strictEqual(settings.columnVisible[2], false);
+    assert.strictEqual(settings.columnVisible[12], true);
+    assert.strictEqual(settings.columnVisible[13], true);
+    const reordered = [0, 2, 12, 3, 5, 6, 7, 8, 9, 10, 11, 4, 1, 13];
+    assert.strictEqual(settings.setColumnOrder(reordered), true);
+    settings.setColumnVisible(1, false);
+    settings.setColumnVisible(12, false);
+    settings.setColumn(13, 85);
+    const reloaded = settingsContext(Object.fromEntries(result.properties)).settings;
+    assert.deepStrictEqual(Array.from(reloaded.columnOrder), reordered);
+    assert.strictEqual(reloaded.columnVisible[1], false);
+    assert.strictEqual(reloaded.columnVisible[12], false);
+    assert.strictEqual(reloaded.columns[13], 85);
+    for (const badIndex of [0, -1, 14, 1.5, NaN, undefined, '2']) {
+        const invalid = reordered.slice();
+        invalid[1] = badIndex;
+        assert.strictEqual(settings.setColumnOrder(invalid), false);
+        assert.deepStrictEqual(Array.from(settings.columnOrder), reordered);
+    }
+    const movedIndex = reordered.slice();
+    [movedIndex[0], movedIndex[1]] = [movedIndex[1], movedIndex[0]];
+    assert.strictEqual(settings.setColumnOrder(movedIndex), false);
+    for (const invalid of [
+        oldOrder.replace('title,length', 'length,title'),
+        oldOrder.replace('artist', 'tracknumber'),
+        oldOrder.replace('artist', 'unknown'),
+        oldOrder.replace('artist', 'album'),
+        result.properties.get('jsplitterFusion.column.order').replace('totaltracks', 'artist')
+    ]) {
+        const reset = settingsContext({ 'jsplitterFusion.column.order': invalid }).settings;
+        assert.deepStrictEqual(Array.from(reset.columnOrder),
+            [0, 12, 13, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4]);
+    }
 }
 
 {
@@ -125,12 +171,12 @@ function settingsContext(initial) {
         'jsplitterFusion.column.order': 'index,title,length,artist,album'
     });
     assert.deepStrictEqual(Array.from(result.settings.columnOrder),
-        [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4]);
+        [0, 12, 13, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4]);
     assert.strictEqual(result.properties.get('jsplitterFusion.column.order'),
-        'index,title,artist,album,filename,codec,bitrate,samplerate,bitdepth,channels,filesize,length');
+        'index,tracknumber,totaltracks,title,artist,album,filename,codec,bitrate,samplerate,bitdepth,channels,filesize,length');
     assert.strictEqual(result.settings.columnVisible[5], false);
     assert.strictEqual(result.settings.columnVisible[4], true);
-    assert.deepStrictEqual(Array.from(result.settings.columnVisible.slice(6)),
+    assert.deepStrictEqual(Array.from(result.settings.columnVisible.slice(6, 12)),
         [false, false, false, false, false, false]);
 }
 
@@ -139,9 +185,9 @@ function settingsContext(initial) {
         'jsplitterFusion.column.order': 'index,title,artist,album,filename,length'
     });
     assert.deepStrictEqual(Array.from(result.settings.columnOrder),
-        [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4]);
+        [0, 12, 13, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4]);
     assert.strictEqual(result.properties.get('jsplitterFusion.column.order'),
-        'index,title,artist,album,filename,codec,bitrate,samplerate,bitdepth,channels,filesize,length');
+        'index,tracknumber,totaltracks,title,artist,album,filename,codec,bitrate,samplerate,bitdepth,channels,filesize,length');
 }
 
 {
@@ -150,16 +196,16 @@ function settingsContext(initial) {
             'index,title,artist,album,filename,codec,bitrate,samplerate,bitdepth,channels,codec,length'
     });
     assert.deepStrictEqual(Array.from(result.settings.columnOrder),
-        [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4]);
+        [0, 12, 13, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4]);
     assert.strictEqual(result.properties.get('jsplitterFusion.column.order'),
-        'index,title,artist,album,filename,codec,bitrate,samplerate,bitdepth,channels,filesize,length');
+        'index,tracknumber,totaltracks,title,artist,album,filename,codec,bitrate,samplerate,bitdepth,channels,filesize,length');
 }
 
 {
     const result = settingsContext();
     assert.deepStrictEqual(Array.from(result.settings.columnOrder),
-        [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4]);
-    assert.strictEqual(result.settings.columnDefinitions.length, 12);
+        [0, 12, 13, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 4]);
+    assert.strictEqual(result.settings.columnDefinitions.length, 14);
     assert.strictEqual(result.settings.nowPlayingFormat,
         '$if2(%title%,$if2(%filename_ext%,no title))');
     assert.strictEqual(result.settings.volumeMode, 'curve');
@@ -431,6 +477,152 @@ function handleList(handles, duration, size) {
         ['B', 2, 1],
         ['A', 3, 2]
     ]);
+    for (const [raw, expected] of [
+        ['01', '1'], ['04', '4'], ['100', '100'], ['000', '0'], ['0', '0'],
+        ['', ''], [null, ''], [undefined, ''], ['   ', ''], [' 004 ', '4'],
+        ['A3', 'A3'], ['01/04', '01/04'], ['-1', '-1'], ['1.5', '1.5'],
+        ['000123456789012345678901', '123456789012345678901']
+    ]) {
+        metadata['[%tracknumber%]'] = [raw];
+        metadata['[%totaltracks%]'] = [raw];
+        model.reloadItems();
+        assert.strictEqual(model.meta[0].tracknumber, expected);
+        assert.strictEqual(model.meta[0].totaltracks, expected);
+        assert.strictEqual(model.meta[1].tracknumber, '');
+        assert.strictEqual(model.meta[1].totaltracks, '');
+    }
+    metadata['[%tracknumber%]'] = ['01'];
+    metadata['[%totaltracks%]'] = ['04'];
+    model.reloadItems();
+    assert.strictEqual(model.meta[0].tracknumber, '1');
+    assert.strictEqual(model.meta[0].totaltracks, '4'); // Five items do not imply five album tracks.
+    context.plman.GetPlaylistItems = () => ({ Count: 0 });
+    model.reloadItems();
+    assert.strictEqual(model.meta.length, 0);
+    context.plman.PlaylistCount = 0;
+    model.reloadItems();
+    assert.strictEqual(model.handles, null);
+}
+
+{
+    const { settings, context } = settingsContext();
+    const menuEntries = [];
+    let menuResult = 0;
+    let released = 0;
+    const graphics = { CalcTextWidth: text => String(text).length * 8 };
+    Object.assign(context, {
+        MF_STRING: 0, MF_GRAYED: 1,
+        utils: { IsKeyPressed: () => false },
+        gdi: { CreateImage: () => ({
+            GetGraphics: () => graphics,
+            ReleaseGraphics: () => { ++released; }
+        }) }
+    });
+    Object.assign(context.window, {
+        Repaint: () => {}, RepaintRect: () => {},
+        CreatePopupMenu: () => ({
+            AppendMenuItem: (flags, id, label) => menuEntries.push({ flags, id, label }),
+            AppendMenuSeparator: () => {}, CheckMenuItem: () => {},
+            TrackPopupMenu: () => menuResult
+        })
+    });
+    Object.assign(context.FusionUI.Theme, {
+        metrics: { header: 24, row: 24, scrollbar: 14, padding: 6 }, fonts: { normal: {} }
+    });
+    run('core/utils.js', context);
+    run('views/scrollbar.js', context);
+    run('views/playlist-view.js', context);
+    const model = {
+        active: -1, rows: [{ type: 'item', itemIndex: 0 }],
+        meta: [{ title: 'Song', tracknumber: '1', totaltracks: '4' },
+            { tracknumber: '', totaltracks: '' }]
+    };
+    const view = new context.FusionUI.PlaylistView(model);
+    const rect = { x: 0, y: 0, w: 1800, h: 200 };
+    view.layout(rect);
+    assert.deepStrictEqual(Array.from(view.visibleColumns, column => column.name),
+        ['#', '№', 'Total', 'Title', 'Artist', 'Album', 'Length']);
+    assert.strictEqual(view.columnValue(0, 3), '4');
+    assert.strictEqual(view.columnValue(12, 0), '1');
+    assert.strictEqual(view.columnValue(13, 0), '4');
+    assert.strictEqual(view.columnValue(12, 1), '');
+    assert.strictEqual(view.columnValue(13, 1), '');
+    assert.strictEqual(view.columnValue(2, 0), 'No data');
+    assert.strictEqual(view.columnCentered(12), true);
+    assert.strictEqual(view.columnCentered(13), true);
+
+    function dragBefore(source, target) {
+        const from = view.visibleColumns.find(column => column.index === source);
+        const to = view.visibleColumns.find(column => column.index === target);
+        const x = from.x + from.width / 2;
+        const dropX = to.x + 5;
+        assert.strictEqual(view.down(x, 12), true);
+        assert.strictEqual(view.headerDownColumn, source);
+        view.move(dropX, 12);
+        assert.strictEqual(view.headerDropBefore, target);
+        view.up(dropX, 12);
+        assert.strictEqual(view.headerDownColumn, -1);
+    }
+    dragBefore(12, 2); // Across Title.
+    assert(settings.columnOrder.indexOf(12) > settings.columnOrder.indexOf(1));
+    dragBefore(12, 13); // Back to the default slot.
+    assert.deepStrictEqual(Array.from(settings.columnOrder.slice(0, 4)), [0, 12, 13, 1]);
+    dragBefore(1, 12);
+    assert.deepStrictEqual(Array.from(settings.columnOrder.slice(0, 4)), [0, 1, 12, 13]);
+    view.down(20, 12);
+    assert.strictEqual(view.headerDownColumn, -1);
+    view.headerDownColumn = 0;
+    assert.strictEqual(view.commitHeaderDrop(), false);
+    view.resetHeaderDrag();
+
+    menuResult = 101; // Title can be hidden from the actual header menu.
+    view.headerContext(20, 12);
+    assert.strictEqual(menuEntries.find(entry => entry.id === 101).flags, context.MF_STRING);
+    assert.strictEqual(settings.columnVisible[1], false);
+    settings.setColumnVisible(0, false);
+    view.layout(rect);
+    dragBefore(13, 12);
+    assert.strictEqual(view.visibleColumns[0].index, 13);
+    assert.strictEqual(settings.columnOrder[0], 0);
+
+    const total = view.visibleColumns[0];
+    const boundary = total.x + total.width;
+    view.down(boundary, 12);
+    view.move(boundary + 30, 12);
+    view.up(boundary + 30, 12);
+    assert.strictEqual(settings.columns[13], 94);
+    view.autoFitColumns([12, 13]);
+    assert(settings.columns[13] >= graphics.CalcTextWidth('Total') + 12);
+    assert.strictEqual(released, 1);
+    view.layout({ x: 0, y: 0, w: 160, h: 200 });
+    assert.strictEqual(view.showHorizontal, true);
+    view.horizontalScrollbar.setValue(48);
+    assert.strictEqual(view.visibleColumns[0].x, -48);
+
+    for (let i = 0; i < settings.columnDefinitions.length; ++i) settings.setColumnVisible(i, false);
+    view.layout(rect);
+    assert.strictEqual(view.visibleColumns.length, 0);
+    assert.strictEqual(view.contentWidth, 0);
+    assert.strictEqual(view.horizontalOffset, 0);
+    assert.strictEqual(view.showHorizontal, false);
+    assert.strictEqual(view.headerColumnAt(20, 12), -1);
+    menuResult = 112; // The blank header still exposes the menu to restore a column.
+    view.headerContext(20, 12);
+    assert.strictEqual(view.visibleColumns.length, 1);
+    assert.strictEqual(view.visibleColumns[0].index, 12);
+    view.down(20, 12);
+    view.move(60, 12);
+    assert.strictEqual(view.headerDropMarkerX, rect.x);
+    view.up(60, 12);
+    assert.strictEqual(settings.columnOrder[0], 0);
+    settings.setColumnVisible(0, true);
+    view.layout(rect);
+    view.headerDownColumn = 12;
+    view.updateHeaderDrop(100, 12);
+    assert.strictEqual(view.headerDropMarkerX, settings.columns[0]);
+    view.updateHeaderDrop(-1, 12);
+    assert.strictEqual(view.headerDropMarkerX, null);
+    view.resetHeaderDrag();
 }
 
 {
